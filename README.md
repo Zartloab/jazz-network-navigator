@@ -14,6 +14,12 @@ A polished local-first relationship intelligence dashboard for musicians, manage
 - Optional OpenAI-powered network answers and email drafts
 - Make.com automation blueprint and enrichment simulation
 
+## Contact enrichment
+
+The detailed process for cleaning, verifying, enriching, reviewing, and safely
+activating contact records is documented in
+[Contact enrichment process](docs/contact-enrichment-process.md).
+
 ## Run locally
 
 ```bash
