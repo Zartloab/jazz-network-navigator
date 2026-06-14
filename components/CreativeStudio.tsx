@@ -11,6 +11,7 @@ import {
   PenLine,
   Sparkles,
   Target,
+  Trash2,
   WandSparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -93,9 +94,13 @@ export default function CreativeStudio({
   useEffect(() => {
     const stored = window.localStorage.getItem(PACK_STORAGE_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored) as CreativePack[];
-      setPacks(parsed);
-      setSelectedId(parsed[0]?.id || "");
+      try {
+        const parsed = JSON.parse(stored) as CreativePack[];
+        setPacks(parsed);
+        setSelectedId(parsed[0]?.id || "");
+      } catch {
+        window.localStorage.removeItem(PACK_STORAGE_KEY);
+      }
     }
     setHydrated(true);
   }, []);
@@ -152,6 +157,16 @@ export default function CreativeStudio({
     } finally {
       setLoading(false);
     }
+  };
+
+  const removeSelectedPack = () => {
+    if (!selectedPack) return;
+    setPacks((current) => {
+      const remaining = current.filter((pack) => pack.id !== selectedPack.id);
+      setSelectedId(remaining[0]?.id || "");
+      return remaining;
+    });
+    setMessage("");
   };
 
   return (
@@ -225,7 +240,10 @@ export default function CreativeStudio({
                   <h3>{selectedPack.title}</h3>
                   <p>{selectedPack.goal} · created {new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(selectedPack.createdAt))}</p>
                 </div>
-                <CopyButton value={completePackText} label="Copy complete kit" />
+                <div className="studio-output-actions">
+                  <CopyButton value={completePackText} label="Copy complete kit" />
+                  <button className="studio-delete" onClick={removeSelectedPack}><Trash2 size={13} /> Delete draft</button>
+                </div>
               </div>
               <div className="studio-primary-assets">
                 <TextAsset label="One-line pitch" value={selectedPack.oneLiner} />

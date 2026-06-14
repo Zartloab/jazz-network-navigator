@@ -73,6 +73,7 @@ import {
   EmailIntent,
   Priority,
   ResearchOpportunity,
+  TodayTask,
   Temperature,
 } from "@/lib/types";
 import TourBuilder from "@/components/TourBuilder";
@@ -80,11 +81,17 @@ import OpportunityScout from "@/components/OpportunityScout";
 import ArtistProfileEditor from "@/components/ArtistProfileEditor";
 import CreativeStudio from "@/components/CreativeStudio";
 import { emptyArtistProfile } from "@/lib/creative-studio";
+import { buildTodayTasks } from "@/lib/today";
+import {
+  buildDataHealthSummary,
+  DataHealthMetric,
+} from "@/lib/data-health";
 
 const STORAGE_KEY = "jazz-network-navigator-contacts-v1";
 const OPPORTUNITY_STORAGE_KEY = "jazz-network-navigator-opportunities-v1";
 const NOTIFICATION_READ_KEY = "jazz-network-navigator-notifications-read-v1";
 const ARTIST_PROFILE_KEY = "jazz-network-navigator-artist-profile-v1";
+const TODAY_COMPLETED_KEY = "jazz-network-navigator-today-completed-v1";
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
 const temperatureColors: Record<Temperature, string> = {
@@ -178,6 +185,17 @@ function cleanContact(contact: Contact): Contact {
     lat: contact.lat === "" ? "" : Number(contact.lat),
     lng: contact.lng === "" ? "" : Number(contact.lng),
   };
+}
+
+function readLocalJson<T>(key: string): T | null {
+  const stored = window.localStorage.getItem(key);
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored) as T;
+  } catch {
+    window.localStorage.removeItem(key);
+    return null;
+  }
 }
 
 function priorityWeight(priority: Priority): number {
@@ -283,24 +301,33 @@ export default function JazzDashboard() {
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [researchHydrated, setResearchHydrated] = useState(false);
   const [artistProfile, setArtistProfile] = useState<ArtistProfile>(emptyArtistProfile);
+  const [completedTodayIds, setCompletedTodayIds] = useState<string[]>([]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      setContacts((JSON.parse(stored) as Contact[]).map(cleanContact));
+    const storedContacts = readLocalJson<Contact[]>(STORAGE_KEY);
+    if (storedContacts) {
+      setContacts(storedContacts.map(cleanContact));
     } else {
       setLocked(true);
     }
     const initialView = window.location.hash.replace("#", "") as AppView;
     if (initialView in viewDetails) setActiveView(initialView);
-    const storedOpportunities = window.localStorage.getItem(OPPORTUNITY_STORAGE_KEY);
-    if (storedOpportunities) {
-      setOpportunities(JSON.parse(storedOpportunities) as ResearchOpportunity[]);
+    const storedOpportunities = readLocalJson<ResearchOpportunity[]>(
+      OPPORTUNITY_STORAGE_KEY,
+    );
+    if (storedOpportunities) setOpportunities(storedOpportunities);
+    const storedReadIds = readLocalJson<string[]>(NOTIFICATION_READ_KEY);
+    if (storedReadIds) setReadNotificationIds(storedReadIds);
+    const storedProfile = readLocalJson<ArtistProfile>(ARTIST_PROFILE_KEY);
+    if (storedProfile) {
+      setArtistProfile({ ...emptyArtistProfile, ...storedProfile });
     }
-    const storedReadIds = window.localStorage.getItem(NOTIFICATION_READ_KEY);
-    if (storedReadIds) setReadNotificationIds(JSON.parse(storedReadIds) as string[]);
-    const storedProfile = window.localStorage.getItem(ARTIST_PROFILE_KEY);
-    if (storedProfile) setArtistProfile(JSON.parse(storedProfile) as ArtistProfile);
+    const storedToday = readLocalJson<{ date: string; ids: string[] }>(
+      TODAY_COMPLETED_KEY,
+    );
+    if (storedToday) {
+      if (storedToday.date === TODAY()) setCompletedTodayIds(storedToday.ids);
+    }
     setResearchHydrated(true);
     setHydrated(true);
   }, []);
@@ -332,6 +359,14 @@ export default function JazzDashboard() {
     if (!researchHydrated) return;
     window.localStorage.setItem(ARTIST_PROFILE_KEY, JSON.stringify(artistProfile));
   }, [artistProfile, researchHydrated]);
+
+  useEffect(() => {
+    if (!researchHydrated) return;
+    window.localStorage.setItem(
+      TODAY_COMPLETED_KEY,
+      JSON.stringify({ date: TODAY(), ids: completedTodayIds }),
+    );
+  }, [completedTodayIds, researchHydrated]);
 
   useEffect(() => {
     if (!researchHydrated || !contacts.length || opportunities.length) return;
@@ -366,6 +401,7 @@ export default function JazzDashboard() {
       OPPORTUNITY_STORAGE_KEY,
       NOTIFICATION_READ_KEY,
       ARTIST_PROFILE_KEY,
+      TODAY_COMPLETED_KEY,
       "jazz-network-navigator-research-brief-v1",
       "jazz-network-navigator-creative-packs-v1",
       "jazz-network-navigator-tour-plan-v1",
@@ -374,6 +410,7 @@ export default function JazzDashboard() {
     setOpportunities([]);
     setReadNotificationIds([]);
     setArtistProfile(emptyArtistProfile);
+    setCompletedTodayIds([]);
     setSelectedId(null);
     setLocked(true);
   };
@@ -448,6 +485,13 @@ export default function JazzDashboard() {
             {activeView === "home" && (
               <DashboardOverview
                 contacts={contacts}
+                opportunities={opportunities}
+                profile={artistProfile}
+                completedTodayIds={completedTodayIds}
+                onCompleteToday={(id) =>
+                  setCompletedTodayIds((current) => [...new Set([...current, id])])
+                }
+                onResetToday={() => setCompletedTodayIds([])}
                 onNavigate={navigate}
                 onSelect={setSelectedId}
                 onEmail={setEmailContactId}
@@ -522,8 +566,10 @@ export default function JazzDashboard() {
             )}
             {activeView === "settings" && (
               <SettingsWorkspace
+                contacts={contacts}
                 profile={artistProfile}
                 onProfileChange={setArtistProfile}
+                onSelectContact={setSelectedId}
                 onReset={resetData}
                 onExportJson={exportJson}
                 onExportCsv={exportCsv}
@@ -739,12 +785,22 @@ function PageGuide({ text }: { text: string }) {
 
 function DashboardOverview({
   contacts,
+  opportunities,
+  profile,
+  completedTodayIds,
+  onCompleteToday,
+  onResetToday,
   onNavigate,
   onSelect,
   onEmail,
   onAdd,
 }: {
   contacts: Contact[];
+  opportunities: ResearchOpportunity[];
+  profile: ArtistProfile;
+  completedTodayIds: string[];
+  onCompleteToday: (id: string) => void;
+  onResetToday: () => void;
   onNavigate: (view: AppView) => void;
   onSelect: (id: string) => void;
   onEmail: (id: string) => void;
@@ -753,15 +809,18 @@ function DashboardOverview({
   const due = contacts
     .filter((contact) => isDue(contact.next_follow_up_date))
     .sort((a, b) => followUpUrgency(b) - followUpUrgency(a));
-  const priorities = [...contacts]
-    .filter((contact) => contact.priority === "High" || contact.relationship_stage !== "Unqualified")
-    .sort((a, b) => followUpUrgency(b) - followUpUrgency(a))
-    .slice(0, 5);
   const hot = contacts.filter((contact) => contact.relationship_temperature === "Hot").length;
   const active = contacts.filter((contact) => contact.relationship_stage !== "Unqualified").length;
   const cityCount = new Set(
     contacts.filter((contact) => contact.city && contact.city !== "Unknown").map((contact) => `${contact.city}|${contact.country}`),
   ).size;
+  const todayTasks = buildTodayTasks(
+    contacts,
+    opportunities,
+    profile,
+    completedTodayIds,
+  );
+  const urgentToday = todayTasks.filter((task) => task.priority === "High").length;
 
   const quickActions = [
     { title: "Plan a tour", copy: "Find contacts and prepare outreach drafts.", icon: Route, view: "tour" as AppView },
@@ -805,28 +864,50 @@ function DashboardOverview({
           </div>
         </article>
 
-        <article className="panel priority-card">
+        <article className="panel today-plan-card">
           <div className="overview-card-heading">
-            <div><span className="eyebrow">Next actions</span><h3>Your priority list</h3></div>
-            <button className="text-button" onClick={() => onNavigate("follow-ups")}>See all <ArrowRight size={14} /></button>
+            <div>
+              <span className="eyebrow">Your daily brief</span>
+              <h3>
+                {todayTasks.length
+                  ? `${todayTasks.length} useful next ${todayTasks.length === 1 ? "move" : "moves"}`
+                  : "You’re clear for today"}
+              </h3>
+            </div>
+            <div className="today-plan-heading-actions">
+              {completedTodayIds.length > 0 && (
+                <button onClick={onResetToday}>Restore hidden</button>
+              )}
+              {todayTasks.length > 0 && (
+                <span className={`today-plan-count${urgentToday ? " urgent" : ""}`}>
+                  {urgentToday ? `${urgentToday} important` : "Plan ready"}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="priority-list">
-            {priorities.map((contact) => (
-              <div className="priority-row" key={contact.id}>
-                <button className="priority-person" onClick={() => onSelect(contact.id)}>
-                  <span className="avatar">{(contact.first_name || contact.full_name || "?").slice(0, 1)}</span>
-                  <span><strong>{contactLabel(contact)}</strong><small>{contact.company || contact.category}</small></span>
-                </button>
-                <div className="priority-action">
-                  <span>{contact.recommended_next_action || "Review this relationship"}</span>
-                  <small className={isDue(contact.next_follow_up_date) ? "overdue" : ""}>
-                    {contact.next_follow_up_date ? `${isDue(contact.next_follow_up_date) ? "Due" : "Next"} ${formatDate(contact.next_follow_up_date)}` : contact.relationship_stage}
-                  </small>
-                </div>
-                <button className="icon-button" title={`Create an email draft for ${contactLabel(contact)}`} onClick={() => onEmail(contact.id)}><Mail size={16} /></button>
-              </div>
+          <div className="today-plan-list">
+            {todayTasks.map((task) => (
+              <TodayTaskRow
+                key={task.id}
+                task={task}
+                onAction={() => {
+                  if (task.kind === "follow-up" && task.contactId) {
+                    onEmail(task.contactId);
+                  } else if (task.kind === "relationship" && task.contactId) {
+                    onSelect(task.contactId);
+                  } else {
+                    onNavigate(task.actionView);
+                  }
+                }}
+                onComplete={() => onCompleteToday(task.id)}
+              />
             ))}
-            {!priorities.length && <div className="overview-empty"><Check size={18} /> Nothing urgent right now.</div>}
+            {!todayTasks.length && (
+              <div className="today-plan-empty">
+                <span><Check size={19} /></span>
+                <div><strong>Nothing urgent is waiting.</strong><small>Use the shortcuts when you’re ready to build momentum.</small></div>
+              </div>
+            )}
           </div>
         </article>
       </div>
@@ -845,15 +926,53 @@ function DashboardOverview({
   );
 }
 
+function TodayTaskRow({
+  task,
+  onAction,
+  onComplete,
+}: {
+  task: TodayTask;
+  onAction: () => void;
+  onComplete: () => void;
+}) {
+  const icons = {
+    "follow-up": Mail,
+    opportunity: ScanSearch,
+    relationship: Users,
+    profile: Sparkles,
+  };
+  const Icon = icons[task.kind];
+  return (
+    <div className={`today-task${task.priority === "High" ? " important" : ""}`}>
+      <span className={`today-task-icon ${task.kind}`}><Icon size={16} /></span>
+      <div className="today-task-copy">
+        <span>
+          <strong>{task.title}</strong>
+          {task.priority === "High" && <b>Important</b>}
+        </span>
+        <small>{task.body}</small>
+      </div>
+      <div className="today-task-actions">
+        <button className="button button-secondary" onClick={onAction}>{task.actionLabel} <ArrowRight size={12} /></button>
+        <button className="today-task-done" onClick={onComplete} title="Hide this item until tomorrow"><Check size={13} /> Done for today</button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsWorkspace({
+  contacts,
   profile,
   onProfileChange,
+  onSelectContact,
   onReset,
   onExportJson,
   onExportCsv,
 }: {
+  contacts: Contact[];
   profile: ArtistProfile;
   onProfileChange: (profile: ArtistProfile) => void;
+  onSelectContact: (id: string) => void;
   onReset: () => void;
   onExportJson: () => void;
   onExportCsv: () => void;
@@ -862,6 +981,7 @@ function SettingsWorkspace({
     <section className="settings-workspace">
       <PageGuide text="Complete your artist profile once so drafts and plans can reuse it. Everything on this page is saved locally in this browser." />
       <ArtistProfileEditor profile={profile} onChange={onProfileChange} />
+      <DataReadinessPanel contacts={contacts} onSelect={onSelectContact} />
       <div className="settings-grid">
         <article className="panel settings-card">
           <span className="icon-box"><Download size={18} /></span>
@@ -880,6 +1000,80 @@ function SettingsWorkspace({
         </article>
       </div>
       <AutomationBlueprint />
+    </section>
+  );
+}
+
+function DataReadinessPanel({
+  contacts,
+  onSelect,
+}: {
+  contacts: Contact[];
+  onSelect: (id: string) => void;
+}) {
+  const summary = buildDataHealthSummary(contacts);
+  const metricIcons: Record<DataHealthMetric["id"], typeof Mail> = {
+    email: Mail,
+    location: MapPin,
+    "next-action": Target,
+    "follow-up": CalendarClock,
+  };
+  return (
+    <section className="panel data-readiness-card">
+      <div className="data-readiness-heading">
+        <div>
+          <span className="eyebrow">Contact data readiness</span>
+          <h2>Know what is usable before outreach starts.</h2>
+          <p>The app prioritises the missing details that have the biggest practical impact.</p>
+        </div>
+        <div className="readiness-score">
+          <strong>{summary.score}</strong>
+          <span>/100</span>
+          <small>overall readiness</small>
+        </div>
+      </div>
+
+      <div className="readiness-metrics">
+        {summary.metrics.map((metric) => {
+          const Icon = metricIcons[metric.id];
+          return (
+            <article key={metric.id}>
+              <span><Icon size={15} /></span>
+              <div>
+                <strong>{metric.value}% {metric.label}</strong>
+                <small>{metric.detail}</small>
+                <i><b style={{ width: `${metric.value}%` }} /></i>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="readiness-queue-heading">
+        <div><strong>Best details to improve next</strong><small>Start at the top; one useful fix at a time.</small></div>
+        <span>{summary.tasks.length} suggested</span>
+      </div>
+      <div className="readiness-task-list">
+        {summary.tasks.map((task) => (
+          <button key={task.id} onClick={() => onSelect(task.contactId)}>
+            <span className="avatar">{task.contactName.slice(0, 1)}</span>
+            <span>
+              <strong>{task.title}</strong>
+              <small>{task.contactName}{task.company && task.company !== task.contactName ? ` · ${task.company}` : ""}</small>
+              <em>{task.reason}</em>
+            </span>
+            <b className={task.priority === "Important" ? "important" : ""}>{task.priority}</b>
+            <ArrowRight size={13} />
+          </button>
+        ))}
+        {!summary.tasks.length && (
+          <div className="readiness-complete"><Check size={17} /><span>Your core contact data is ready to work with.</span></div>
+        )}
+      </div>
+      <div className="readiness-safety">
+        <Check size={13} />
+        <span>Only verified public details or user-confirmed relationship information should be added.</span>
+      </div>
     </section>
   );
 }

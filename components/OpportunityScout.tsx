@@ -87,7 +87,11 @@ export default function OpportunityScout({
   useEffect(() => {
     const stored = window.localStorage.getItem(BRIEF_STORAGE_KEY);
     if (stored) {
-      setBrief(JSON.parse(stored) as ResearchBrief);
+      try {
+        setBrief({ ...DEFAULT_BRIEF, ...(JSON.parse(stored) as ResearchBrief) });
+      } catch {
+        window.localStorage.removeItem(BRIEF_STORAGE_KEY);
+      }
     } else {
       setBrief({
         locations: profile.baseCity,

@@ -176,6 +176,18 @@ export type AppNotification = {
   read: boolean;
 };
 
+export type TodayTask = {
+  id: string;
+  kind: "follow-up" | "opportunity" | "relationship" | "profile";
+  title: string;
+  body: string;
+  actionLabel: string;
+  actionView: AppView;
+  priority: "High" | "Normal";
+  contactId?: string;
+  opportunityId?: string;
+};
+
 export type ArtistProfile = {
   artistName: string;
   projectName: string;

@@ -21,6 +21,8 @@ guidance.
 - Opportunity Scout with network signals, optional live web research, source links, and saved decisions
 - Reusable Artist Profile for consistent pitches, drafts, links, and tour details
 - Creative Studio for booking, festival, press, release, and collaboration pitch packs
+- Daily Brief that combines follow-ups, active opportunities, relationship gaps, and profile setup
+- Data Readiness dashboard with contactability metrics and a prioritised enrichment queue
 - In-app notifications for due follow-ups, strong opportunities, and relationships missing a next date
 - Make.com automation blueprint and enrichment simulation
 
@@ -29,6 +31,15 @@ guidance.
 The detailed process for cleaning, verifying, enriching, reviewing, and safely
 activating contact records is documented in
 [Contact enrichment process](docs/contact-enrichment-process.md).
+
+Open **Settings & Export** to see **Contact Data Readiness**. It measures
+verified email-route coverage, location coverage, clear next actions, and
+follow-up scheduling for active relationships. The queue recommends the
+highest-value missing detail to fix for up to six contacts and opens the
+selected contact directly.
+
+The app never guesses an email address. Users should add only verified public
+details or relationship information they can confirm.
 
 ## Run locally
 
@@ -166,6 +177,16 @@ The notification bell surfaces a small action list rather than a general
 activity feed. It includes overdue follow-ups, high-confidence new
 opportunities, and strong relationships without a scheduled next date.
 
+## Daily Brief
+
+Home turns the product’s existing signals into a short daily plan. It can
+include due follow-ups, saved and active opportunities, strong relationships
+without a next date, and incomplete artist-profile setup.
+
+The brief is capped at six actions and prioritises important work first. Each
+item has one primary action. **Done for today** hides it until the next day, and
+**Restore hidden** reverses accidental dismissals.
+
 ## Artist Profile and Creative Studio
 
 Open **Settings** to create the reusable Artist Profile. Store the facts that
@@ -188,6 +209,8 @@ The app creates a deterministic local draft first. When `OPENAI_API_KEY` is
 available, it can refine that pack using only the saved profile and creative
 brief. Generated copy remains a draft and the prompt explicitly prevents
 invented achievements, reviews, audience figures, collaborators, or dates.
+Draft kits remain local to the browser and can be copied or deleted by the
+user.
 
 ## Validation
 
