@@ -1,4 +1,11 @@
-import { Contact, EmailDraft, EmailIntent, Priority, Temperature } from "@/lib/types";
+import {
+  ArtistProfile,
+  Contact,
+  EmailDraft,
+  EmailIntent,
+  Priority,
+  Temperature,
+} from "@/lib/types";
 
 const stageOrder = [
   "Materials requested",
@@ -183,7 +190,11 @@ const intentCopy: Record<EmailIntent, { subject: string; opening: string; ask: s
   },
 };
 
-export function generateLocalEmailDraft(contact: Contact, intent: EmailIntent): EmailDraft {
+export function generateLocalEmailDraft(
+  contact: Contact,
+  intent: EmailIntent,
+  profile?: ArtistProfile,
+): EmailDraft {
   const template = intentCopy[intent];
   const name = contact.first_name || contact.full_name.split(" ")[0] || "there";
   const context = contact.notes
@@ -192,10 +203,20 @@ export function generateLocalEmailDraft(contact: Contact, intent: EmailIntent): 
       ? `The reason I thought of you is: ${contact.opportunity_summary}.`
       : `I thought this could be relevant to your work${contact.company ? ` at ${contact.company}` : ""}.`;
   const intro = contact.introduced_by ? ` ${contact.introduced_by} suggested we connect.` : "";
+  const projectContext = profile?.currentProject
+    ? `\n\nThe current focus is ${profile.currentProject}.`
+    : "";
+  const usefulLinks = [
+    profile?.musicUrl ? `Music: ${profile.musicUrl}` : "",
+    profile?.liveVideoUrl ? `Live video: ${profile.liveVideoUrl}` : "",
+    profile?.pressKitUrl ? `EPK: ${profile.pressKitUrl}` : "",
+  ].filter(Boolean);
+  const links = usefulLinks.length ? `\n\n${usefulLinks.join("\n")}` : "";
+  const signature = profile?.signatureName || profile?.artistName || "[Your name]";
 
   return {
     subject: `${template.subject}${contact.company ? ` | ${contact.company}` : ""}`,
-    body: `Hi ${name},\n\n${template.opening}${intro}\n\n${context}\n\n${getSuggestedOutreachAngle(contact)}\n\n${template.ask}\n\nBest,\n[Your name]`,
+    body: `Hi ${name},\n\n${template.opening}${intro}\n\n${context}${projectContext}\n\n${getSuggestedOutreachAngle(contact)}\n\n${template.ask}${links}\n\nBest,\n${signature}`,
     cta: template.ask,
   };
 }

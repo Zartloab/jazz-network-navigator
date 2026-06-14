@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { getOpenAIClient, getOpenAIModel } from "@/lib/openai";
-import { Contact, EmailIntent } from "@/lib/types";
+import { ArtistProfile, Contact, EmailIntent } from "@/lib/types";
 
 export async function POST(request: Request) {
   const client = getOpenAIClient();
   if (!client) return NextResponse.json({ available: false });
 
-  const body = (await request.json()) as { contact?: Contact; intent?: EmailIntent };
+  const body = (await request.json()) as {
+    contact?: Contact;
+    intent?: EmailIntent;
+    profile?: ArtistProfile;
+  };
   if (!body.contact || !body.intent) {
     return NextResponse.json({ error: "Contact and intent are required." }, { status: 400 });
   }
@@ -18,6 +22,7 @@ export async function POST(request: Request) {
         "Write a short, human music-industry outreach email. Return valid JSON with string fields subject, body, and cta. Keep it specific, warm, low-pressure, and under 170 words. Do not invent facts or claim attachments were sent.",
       input: JSON.stringify({
         intent: body.intent,
+        artist_profile: body.profile || {},
         contact: {
           name: body.contact.full_name,
           first_name: body.contact.first_name,

@@ -3,6 +3,7 @@
 import {
   Activity,
   ArrowRight,
+  Bell,
   Bot,
   CalendarClock,
   Check,
@@ -15,15 +16,25 @@ import {
   Filter,
   Flame,
   Globe2,
+  HelpCircle,
+  Home,
+  LayoutGrid,
+  ListChecks,
   Mail,
+  Map as MapIcon,
   MapPin,
+  Menu,
   MessageSquareText,
   Music2,
+  PanelLeftClose,
   Plus,
   Radio,
   RefreshCcw,
+  Route,
+  ScanSearch,
   Search,
   Send,
+  Settings,
   Sparkles,
   Target,
   Users,
@@ -49,9 +60,31 @@ import {
   opportunityStages,
   simulateMakeEnrichment,
 } from "@/lib/local-ai";
-import { Contact, EmailDraft, EmailIntent, Priority, Temperature } from "@/lib/types";
+import {
+  buildAppNotifications,
+  buildLocalOpportunityScan,
+} from "@/lib/opportunity-scout";
+import {
+  AppNotification,
+  AppView,
+  ArtistProfile,
+  Contact,
+  EmailDraft,
+  EmailIntent,
+  Priority,
+  ResearchOpportunity,
+  Temperature,
+} from "@/lib/types";
+import TourBuilder from "@/components/TourBuilder";
+import OpportunityScout from "@/components/OpportunityScout";
+import ArtistProfileEditor from "@/components/ArtistProfileEditor";
+import CreativeStudio from "@/components/CreativeStudio";
+import { emptyArtistProfile } from "@/lib/creative-studio";
 
 const STORAGE_KEY = "jazz-network-navigator-contacts-v1";
+const OPPORTUNITY_STORAGE_KEY = "jazz-network-navigator-opportunities-v1";
+const NOTIFICATION_READ_KEY = "jazz-network-navigator-notifications-read-v1";
+const ARTIST_PROFILE_KEY = "jazz-network-navigator-artist-profile-v1";
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
 const temperatureColors: Record<Temperature, string> = {
@@ -84,6 +117,59 @@ const mapFilters = [
 ] as const;
 
 type MapFilter = (typeof mapFilters)[number];
+
+const viewDetails: Record<AppView, { title: string; description: string; help: string }> = {
+  home: {
+    title: "Home",
+    description: "A simple view of what needs your attention today.",
+    help: "Start here. Choose one recommended action, or use the shortcuts to plan a tour, follow up, find a contact, or ask AI.",
+  },
+  tour: {
+    title: "Tour Builder",
+    description: "Turn a tour idea into contacts, drafts, and a follow-up plan.",
+    help: "Enter the places and goal for your tour, then review the suggested contacts. Nothing is sent automatically.",
+  },
+  research: {
+    title: "Opportunity Scout",
+    description: "Find warm routes and current openings worth acting on.",
+    help: "Start with a simple brief. Scout checks your saved network first and uses clearly linked web sources when live research is available.",
+  },
+  studio: {
+    title: "Creative Studio",
+    description: "Create useful pitches, story angles, and campaign material.",
+    help: "Choose what you need and who it is for. The studio uses your artist profile, creates drafts only, and never invents achievements.",
+  },
+  "follow-ups": {
+    title: "Follow-ups",
+    description: "See who needs a message and what to say next.",
+    help: "Work from the top down. The highest-priority relationships appear first. Use the envelope to create a draft.",
+  },
+  directory: {
+    title: "Contacts",
+    description: "Search, filter, and update everyone in your network.",
+    help: "Search by person, company, city, email, or note. Open a contact card to view and edit the complete record.",
+  },
+  pipeline: {
+    title: "Pipeline",
+    description: "Track where every active relationship currently stands.",
+    help: "Choose one stage at a time. Move a contact by changing the status on their card.",
+  },
+  radar: {
+    title: "Network Map",
+    description: "Understand where your strongest relationships are located.",
+    help: "Use the filters above the map to focus on relationship warmth or contact type, then select a point for details.",
+  },
+  ask: {
+    title: "Ask AI",
+    description: "Ask a plain-language question about your existing contacts.",
+    help: "Ask one specific question, such as who to contact in a city or which relationships deserve attention this week.",
+  },
+  settings: {
+    title: "Settings & Export",
+    description: "Manage local data, exports, and future automations.",
+    help: "Your contact edits stay in this browser. Export a backup before resetting local data.",
+  },
+};
 
 function cleanContact(contact: Contact): Contact {
   return {
@@ -190,6 +276,13 @@ export default function JazzDashboard() {
   const [sourceFilter, setSourceFilter] = useState("All");
   const [showAdd, setShowAdd] = useState(false);
   const [emailContactId, setEmailContactId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<AppView>("home");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [opportunities, setOpportunities] = useState<ResearchOpportunity[]>([]);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+  const [researchHydrated, setResearchHydrated] = useState(false);
+  const [artistProfile, setArtistProfile] = useState<ArtistProfile>(emptyArtistProfile);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
@@ -198,24 +291,89 @@ export default function JazzDashboard() {
     } else {
       setLocked(true);
     }
+    const initialView = window.location.hash.replace("#", "") as AppView;
+    if (initialView in viewDetails) setActiveView(initialView);
+    const storedOpportunities = window.localStorage.getItem(OPPORTUNITY_STORAGE_KEY);
+    if (storedOpportunities) {
+      setOpportunities(JSON.parse(storedOpportunities) as ResearchOpportunity[]);
+    }
+    const storedReadIds = window.localStorage.getItem(NOTIFICATION_READ_KEY);
+    if (storedReadIds) setReadNotificationIds(JSON.parse(storedReadIds) as string[]);
+    const storedProfile = window.localStorage.getItem(ARTIST_PROFILE_KEY);
+    if (storedProfile) setArtistProfile(JSON.parse(storedProfile) as ArtistProfile);
+    setResearchHydrated(true);
     setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const nextView = window.location.hash.replace("#", "") as AppView;
+      if (nextView in viewDetails) setActiveView(nextView);
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
   useEffect(() => {
     if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(contacts));
   }, [contacts, hydrated]);
 
+  useEffect(() => {
+    if (!researchHydrated) return;
+    window.localStorage.setItem(OPPORTUNITY_STORAGE_KEY, JSON.stringify(opportunities));
+  }, [opportunities, researchHydrated]);
+
+  useEffect(() => {
+    if (!researchHydrated) return;
+    window.localStorage.setItem(NOTIFICATION_READ_KEY, JSON.stringify(readNotificationIds));
+  }, [readNotificationIds, researchHydrated]);
+
+  useEffect(() => {
+    if (!researchHydrated) return;
+    window.localStorage.setItem(ARTIST_PROFILE_KEY, JSON.stringify(artistProfile));
+  }, [artistProfile, researchHydrated]);
+
+  useEffect(() => {
+    if (!researchHydrated || !contacts.length || opportunities.length) return;
+    setOpportunities(
+      buildLocalOpportunityScan(
+        {
+          locations: "",
+          genres: "Jazz, improvised music",
+          goals: "Paid shows, festivals, press, funding",
+          notes: "",
+        },
+        contacts,
+      ),
+    );
+  }, [contacts, opportunities.length, researchHydrated]);
+
   const selectedContact = contacts.find((contact) => contact.id === selectedId) || null;
   const emailContact = contacts.find((contact) => contact.id === emailContactId) || null;
+  const notifications = useMemo(
+    () => buildAppNotifications(contacts, opportunities, readNotificationIds),
+    [contacts, opportunities, readNotificationIds],
+  );
 
   const updateContact = (updated: Contact) => {
     setContacts((current) => current.map((contact) => (contact.id === updated.id ? updated : contact)));
   };
 
   const resetData = () => {
-    if (!window.confirm("Clear local edits and lock the encrypted contact dataset?")) return;
-    window.localStorage.removeItem(STORAGE_KEY);
+    if (!window.confirm("Clear this local workspace, including contacts, plans, profile, and saved drafts?")) return;
+    [
+      STORAGE_KEY,
+      OPPORTUNITY_STORAGE_KEY,
+      NOTIFICATION_READ_KEY,
+      ARTIST_PROFILE_KEY,
+      "jazz-network-navigator-research-brief-v1",
+      "jazz-network-navigator-creative-packs-v1",
+      "jazz-network-navigator-tour-plan-v1",
+    ].forEach((key) => window.localStorage.removeItem(key));
     setContacts([]);
+    setOpportunities([]);
+    setReadNotificationIds([]);
+    setArtistProfile(emptyArtistProfile);
     setSelectedId(null);
     setLocked(true);
   };
@@ -224,6 +382,12 @@ export default function JazzDashboard() {
     downloadFile("jazz-network-contacts.json", JSON.stringify(contacts, null, 2), "application/json");
   const exportCsv = () =>
     downloadFile("jazz-network-contacts.csv", contactsToCsv(contacts), "text/csv;charset=utf-8");
+  const navigate = (view: AppView) => {
+    setActiveView(view);
+    setMobileNavOpen(false);
+    window.history.replaceState(null, "", `#${view}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   if (!hydrated) {
     return (
@@ -250,53 +414,123 @@ export default function JazzDashboard() {
   }
 
   return (
-    <main>
+    <main className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}>
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
-      <Header
-        onAdd={() => setShowAdd(true)}
-        onReset={resetData}
-        onExportJson={exportJson}
-        onExportCsv={exportCsv}
+      <AppSidebar
+        activeView={activeView}
+        open={sidebarOpen}
+        mobileOpen={mobileNavOpen}
+        onNavigate={navigate}
+        onToggle={() => setSidebarOpen((current) => !current)}
+        onCloseMobile={() => setMobileNavOpen(false)}
       />
-      <div className="page-shell">
-        <Hero contacts={contacts} />
-        <RelationshipSection
-          contacts={contacts}
-          filter={mapFilter}
-          onFilter={setMapFilter}
-          hoverId={mapHoverId}
-          onHover={setMapHoverId}
-          onSelect={setSelectedId}
+      {mobileNavOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
+      <div className="app-main">
+        <AppTopbar
+          view={activeView}
+          onOpenMobile={() => setMobileNavOpen(true)}
+          onAdd={() => setShowAdd(true)}
+          notifications={notifications}
+          onMarkAllRead={() =>
+            setReadNotificationIds((current) => [
+              ...new Set([...current, ...notifications.map((notification) => notification.id)]),
+            ])
+          }
+          onOpenNotification={(notification) => {
+            setReadNotificationIds((current) => [...new Set([...current, notification.id])]);
+            navigate(notification.actionView);
+            if (notification.contactId) setSelectedId(notification.contactId);
+          }}
         />
-        <FollowUpSection
-          contacts={contacts}
-          onUpdate={updateContact}
-          onSelect={setSelectedId}
-          onEmail={setEmailContactId}
-        />
-        <OpportunitySection contacts={contacts} onUpdate={updateContact} onSelect={setSelectedId} />
-        <DirectorySection
-          contacts={contacts}
-          search={search}
-          onSearch={setSearch}
-          categoryFilter={categoryFilter}
-          onCategoryFilter={setCategoryFilter}
-          temperatureFilter={temperatureFilter}
-          onTemperatureFilter={setTemperatureFilter}
-          priorityFilter={priorityFilter}
-          onPriorityFilter={setPriorityFilter}
-          sourceFilter={sourceFilter}
-          onSourceFilter={setSourceFilter}
-          onSelect={setSelectedId}
-        />
-        <AskNetwork contacts={contacts} onSelect={setSelectedId} />
-        <AutomationBlueprint />
-        <footer>
-          <div className="brand-mark small"><Music2 size={17} /></div>
-          <span>Jazz Network Navigator</span>
-          <span className="footer-muted">Local-first prototype · your edits stay in this browser</span>
-        </footer>
+        <div className="workspace-scroll">
+          <div className="workspace-content">
+            {activeView === "home" && (
+              <DashboardOverview
+                contacts={contacts}
+                onNavigate={navigate}
+                onSelect={setSelectedId}
+                onEmail={setEmailContactId}
+                onAdd={() => setShowAdd(true)}
+              />
+            )}
+            {activeView === "radar" && (
+              <>
+                <PageGuide text="Filter the map, then select any signal to open that contact’s full record." />
+                <RelationshipSection
+                  contacts={contacts}
+                  filter={mapFilter}
+                  onFilter={setMapFilter}
+                  hoverId={mapHoverId}
+                  onHover={setMapHoverId}
+                  onSelect={setSelectedId}
+                />
+              </>
+            )}
+            {activeView === "follow-ups" && (
+              <>
+                <PageGuide text="Start with the first person in the list. Generate a draft, review it, then record the follow-up after you send it yourself." />
+                <FollowUpSection contacts={contacts} onUpdate={updateContact} onSelect={setSelectedId} onEmail={setEmailContactId} />
+              </>
+            )}
+            {activeView === "tour" && <TourBuilder contacts={contacts} profile={artistProfile} />}
+            {activeView === "research" && (
+              <OpportunityScout
+                contacts={contacts}
+                profile={artistProfile}
+                opportunities={opportunities}
+                onChange={setOpportunities}
+                onSelectContact={setSelectedId}
+              />
+            )}
+            {activeView === "studio" && (
+              <CreativeStudio
+                profile={artistProfile}
+                onOpenProfile={() => navigate("settings")}
+              />
+            )}
+            {activeView === "pipeline" && (
+              <>
+                <PageGuide text="Choose a stage to focus the list. Change a contact’s stage when the conversation moves forward." />
+                <OpportunitySection contacts={contacts} onUpdate={updateContact} onSelect={setSelectedId} />
+              </>
+            )}
+            {activeView === "directory" && (
+              <>
+                <PageGuide text="Use search first, then narrow the results with filters. Select a card to edit the relationship record." />
+                <DirectorySection
+                  contacts={contacts}
+                  search={search}
+                  onSearch={setSearch}
+                  categoryFilter={categoryFilter}
+                  onCategoryFilter={setCategoryFilter}
+                  temperatureFilter={temperatureFilter}
+                  onTemperatureFilter={setTemperatureFilter}
+                  priorityFilter={priorityFilter}
+                  onPriorityFilter={setPriorityFilter}
+                  sourceFilter={sourceFilter}
+                  onSourceFilter={setSourceFilter}
+                  onSelect={setSelectedId}
+                />
+              </>
+            )}
+            {activeView === "ask" && (
+              <>
+                <PageGuide text="Ask one focused question. The answer only uses information already stored in your contact network." />
+                <AskNetwork contacts={contacts} onSelect={setSelectedId} />
+              </>
+            )}
+            {activeView === "settings" && (
+              <SettingsWorkspace
+                profile={artistProfile}
+                onProfileChange={setArtistProfile}
+                onReset={resetData}
+                onExportJson={exportJson}
+                onExportCsv={exportCsv}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {selectedContact && (
@@ -318,9 +552,335 @@ export default function JazzDashboard() {
         />
       )}
       {emailContact && (
-        <EmailDraftModal contact={emailContact} onClose={() => setEmailContactId(null)} />
+        <EmailDraftModal contact={emailContact} profile={artistProfile} onClose={() => setEmailContactId(null)} />
       )}
     </main>
+  );
+}
+
+function AppSidebar({
+  activeView,
+  open,
+  mobileOpen,
+  onNavigate,
+  onToggle,
+  onCloseMobile,
+}: {
+  activeView: AppView;
+  open: boolean;
+  mobileOpen: boolean;
+  onNavigate: (view: AppView) => void;
+  onToggle: () => void;
+  onCloseMobile: () => void;
+}) {
+  const primary = [
+    { view: "home" as AppView, label: "Home", icon: Home, hint: "Today’s priorities" },
+    { view: "tour" as AppView, label: "Tour Builder", icon: Route, hint: "Plan outreach" },
+    { view: "research" as AppView, label: "Opportunity Scout", icon: ScanSearch, hint: "Find new openings" },
+    { view: "studio" as AppView, label: "Creative Studio", icon: WandSparkles, hint: "Build pitches and stories" },
+    { view: "follow-ups" as AppView, label: "Follow-ups", icon: ListChecks, hint: "Messages due" },
+    { view: "directory" as AppView, label: "Contacts", icon: Users, hint: "Search the network" },
+    { view: "pipeline" as AppView, label: "Pipeline", icon: LayoutGrid, hint: "Track progress" },
+  ];
+  const insight = [
+    { view: "radar" as AppView, label: "Network Map", icon: MapIcon, hint: "See strong locations" },
+    { view: "ask" as AppView, label: "Ask AI", icon: Bot, hint: "Get a useful answer" },
+  ];
+
+  const renderItem = ({ view, label, icon: Icon, hint }: (typeof primary)[number]) => (
+    <button
+      key={view}
+      className={`sidebar-link${activeView === view ? " active" : ""}`}
+      onClick={() => onNavigate(view)}
+      aria-current={activeView === view ? "page" : undefined}
+      data-tooltip={`${label}: ${viewDetails[view].help}`}
+    >
+      <Icon size={19} />
+      <span><strong>{label}</strong><small>{hint}</small></span>
+    </button>
+  );
+
+  return (
+    <aside className={`app-sidebar${open ? "" : " collapsed"}${mobileOpen ? " mobile-open" : ""}`}>
+      <div className="sidebar-brand">
+        <span className="brand-mark"><Music2 size={20} /></span>
+        <span className="sidebar-brand-copy">Jazz Network<strong>Navigator</strong></span>
+        <button className="sidebar-mobile-close" onClick={onCloseMobile} aria-label="Close navigation"><X size={18} /></button>
+      </div>
+      <nav className="sidebar-nav" aria-label="Main navigation">
+        <span className="sidebar-section-label">Workspace</span>
+        {primary.map(renderItem)}
+        <span className="sidebar-section-label">Insights</span>
+        {insight.map(renderItem)}
+      </nav>
+      <div className="sidebar-footer">
+        <button
+          className={`sidebar-link${activeView === "settings" ? " active" : ""}`}
+          onClick={() => onNavigate("settings")}
+          data-tooltip="Settings, exports, and automation readiness"
+        >
+          <Settings size={19} />
+          <span><strong>Settings & Export</strong><small>Manage your data</small></span>
+        </button>
+        <div className="privacy-note"><Check size={13} /><span>Saved locally in this browser</span></div>
+        <button className="sidebar-collapse" onClick={onToggle} title={open ? "Collapse sidebar" : "Expand sidebar"}>
+          <PanelLeftClose size={17} /><span>Collapse menu</span>
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function AppTopbar({
+  view,
+  onOpenMobile,
+  onAdd,
+  notifications,
+  onMarkAllRead,
+  onOpenNotification,
+}: {
+  view: AppView;
+  onOpenMobile: () => void;
+  onAdd: () => void;
+  notifications: AppNotification[];
+  onMarkAllRead: () => void;
+  onOpenNotification: (notification: AppNotification) => void;
+}) {
+  const detail = viewDetails[view];
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const unread = notifications.filter((notification) => !notification.read).length;
+  return (
+    <header className="app-topbar">
+      <button className="mobile-menu-button" onClick={onOpenMobile} aria-label="Open navigation"><Menu size={20} /></button>
+      <div className="topbar-page-copy">
+        <div className="topbar-title-row">
+          <h1>{detail.title}</h1>
+          <HelpTip text={detail.help} />
+        </div>
+        <p>{detail.description}</p>
+      </div>
+      <div className="topbar-actions">
+        <div className="notification-menu">
+          <button
+            className={`notification-trigger${notificationsOpen ? " active" : ""}`}
+            onClick={() => setNotificationsOpen((current) => !current)}
+            aria-label={`${unread} unread notifications`}
+            aria-expanded={notificationsOpen}
+          >
+            <Bell size={18} />
+            {unread > 0 && <b>{unread > 9 ? "9+" : unread}</b>}
+          </button>
+          {notificationsOpen && (
+            <div className="notification-panel">
+              <div className="notification-panel-head">
+                <div><strong>What needs attention</strong><small>{unread ? `${unread} unread` : "You’re up to date"}</small></div>
+                {unread > 0 && <button onClick={onMarkAllRead}>Mark all read</button>}
+              </div>
+              <div className="notification-list">
+                {notifications.slice(0, 8).map((notification) => (
+                  <button
+                    key={notification.id}
+                    className={notification.read ? "read" : ""}
+                    onClick={() => {
+                      onOpenNotification(notification);
+                      setNotificationsOpen(false);
+                    }}
+                  >
+                    <span className={`notification-kind ${notification.kind}`}>
+                      {notification.kind === "opportunity" ? <ScanSearch size={15} /> : notification.kind === "follow-up" ? <CalendarClock size={15} /> : <Users size={15} />}
+                    </span>
+                    <span><strong>{notification.title}</strong><small>{notification.body}</small></span>
+                    {!notification.read && <i />}
+                  </button>
+                ))}
+                {!notifications.length && (
+                  <div className="notification-empty"><Check size={18} /><span>Nothing urgent right now.</span></div>
+                )}
+              </div>
+              <button
+                className="notification-footer"
+                onClick={() => {
+                  onOpenNotification({
+                    id: "OPEN-SCOUT",
+                    kind: "opportunity",
+                    title: "",
+                    body: "",
+                    createdAt: TODAY(),
+                    priority: "Normal",
+                    actionView: "research",
+                    read: true,
+                  });
+                  setNotificationsOpen(false);
+                }}
+              >
+                Open Opportunity Scout <ArrowRight size={13} />
+              </button>
+            </div>
+          )}
+        </div>
+        <button className="button button-primary" onClick={onAdd}><Plus size={16} /> Add contact</button>
+      </div>
+    </header>
+  );
+}
+
+function HelpTip({ text }: { text: string }) {
+  return (
+    <span className="help-tip" tabIndex={0} aria-label={text}>
+      <HelpCircle size={16} />
+      <span role="tooltip">{text}</span>
+    </span>
+  );
+}
+
+function PageGuide({ text }: { text: string }) {
+  return <div className="page-guide"><HelpCircle size={16} /><span>{text}</span></div>;
+}
+
+function DashboardOverview({
+  contacts,
+  onNavigate,
+  onSelect,
+  onEmail,
+  onAdd,
+}: {
+  contacts: Contact[];
+  onNavigate: (view: AppView) => void;
+  onSelect: (id: string) => void;
+  onEmail: (id: string) => void;
+  onAdd: () => void;
+}) {
+  const due = contacts
+    .filter((contact) => isDue(contact.next_follow_up_date))
+    .sort((a, b) => followUpUrgency(b) - followUpUrgency(a));
+  const priorities = [...contacts]
+    .filter((contact) => contact.priority === "High" || contact.relationship_stage !== "Unqualified")
+    .sort((a, b) => followUpUrgency(b) - followUpUrgency(a))
+    .slice(0, 5);
+  const hot = contacts.filter((contact) => contact.relationship_temperature === "Hot").length;
+  const active = contacts.filter((contact) => contact.relationship_stage !== "Unqualified").length;
+  const cityCount = new Set(
+    contacts.filter((contact) => contact.city && contact.city !== "Unknown").map((contact) => `${contact.city}|${contact.country}`),
+  ).size;
+
+  const quickActions = [
+    { title: "Plan a tour", copy: "Find contacts and prepare outreach drafts.", icon: Route, view: "tour" as AppView },
+    { title: "Find opportunities", copy: "Scan warm routes and current openings.", icon: ScanSearch, view: "research" as AppView },
+    { title: "Handle follow-ups", copy: `${due.length} currently due or overdue.`, icon: ListChecks, view: "follow-ups" as AppView },
+    { title: "Create a pitch", copy: "Build booking, press, and campaign material.", icon: WandSparkles, view: "studio" as AppView },
+  ];
+
+  return (
+    <section className="dashboard-overview">
+      <div className="dashboard-welcome">
+        <div>
+          <span className="eyebrow">Today’s workspace</span>
+          <h2>Here’s what needs attention.</h2>
+          <p>Choose one task below. You do not need to work through the whole app.</p>
+        </div>
+        <button className="button button-secondary" onClick={onAdd}><Plus size={15} /> Add someone new</button>
+      </div>
+
+      <div className="overview-stats">
+        <article><span className="overview-stat-icon due"><CalendarClock size={18} /></span><div><strong>{due.length}</strong><small>Follow-ups due</small></div><HelpTip text="Contacts whose next follow-up date is today or earlier." /></article>
+        <article><span className="overview-stat-icon hot"><Flame size={18} /></span><div><strong>{hot}</strong><small>Hot relationships</small></div><HelpTip text="Your strongest, most active relationships." /></article>
+        <article><span className="overview-stat-icon active"><Target size={18} /></span><div><strong>{active}</strong><small>Active opportunities</small></div><HelpTip text="Contacts that have moved beyond the unqualified stage." /></article>
+        <article><span className="overview-stat-icon cities"><Globe2 size={18} /></span><div><strong>{cityCount}</strong><small>Cities covered</small></div><HelpTip text="Unique cities represented in your contact network." /></article>
+      </div>
+
+      <div className="overview-grid">
+        <article className="panel start-card">
+          <div className="overview-card-heading">
+            <div><span className="eyebrow">Start here</span><h3>What would you like to do?</h3></div>
+            <span className="friendly-label">Pick one</span>
+          </div>
+          <div className="quick-action-grid">
+            {quickActions.map(({ title, copy, icon: Icon, view }) => (
+              <button key={title} onClick={() => onNavigate(view)}>
+                <span><Icon size={19} /></span>
+                <div><strong>{title}</strong><small>{copy}</small></div>
+                <ChevronRight size={16} />
+              </button>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel priority-card">
+          <div className="overview-card-heading">
+            <div><span className="eyebrow">Next actions</span><h3>Your priority list</h3></div>
+            <button className="text-button" onClick={() => onNavigate("follow-ups")}>See all <ArrowRight size={14} /></button>
+          </div>
+          <div className="priority-list">
+            {priorities.map((contact) => (
+              <div className="priority-row" key={contact.id}>
+                <button className="priority-person" onClick={() => onSelect(contact.id)}>
+                  <span className="avatar">{(contact.first_name || contact.full_name || "?").slice(0, 1)}</span>
+                  <span><strong>{contactLabel(contact)}</strong><small>{contact.company || contact.category}</small></span>
+                </button>
+                <div className="priority-action">
+                  <span>{contact.recommended_next_action || "Review this relationship"}</span>
+                  <small className={isDue(contact.next_follow_up_date) ? "overdue" : ""}>
+                    {contact.next_follow_up_date ? `${isDue(contact.next_follow_up_date) ? "Due" : "Next"} ${formatDate(contact.next_follow_up_date)}` : contact.relationship_stage}
+                  </small>
+                </div>
+                <button className="icon-button" title={`Create an email draft for ${contactLabel(contact)}`} onClick={() => onEmail(contact.id)}><Mail size={16} /></button>
+              </div>
+            ))}
+            {!priorities.length && <div className="overview-empty"><Check size={18} /> Nothing urgent right now.</div>}
+          </div>
+        </article>
+      </div>
+
+      <article className="panel workflow-explainer">
+        <div><span className="eyebrow">How the app works</span><h3>A simple rhythm for managing relationships.</h3></div>
+        <div className="workflow-steps">
+          <span><b>1</b><strong>Choose a goal</strong><small>Plan a tour or decide who needs attention.</small></span>
+          <ArrowRight size={17} />
+          <span><b>2</b><strong>Review a draft</strong><small>AI helps write it. You stay in control.</small></span>
+          <ArrowRight size={17} />
+          <span><b>3</b><strong>Record the outcome</strong><small>Update the stage and follow-up date.</small></span>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function SettingsWorkspace({
+  profile,
+  onProfileChange,
+  onReset,
+  onExportJson,
+  onExportCsv,
+}: {
+  profile: ArtistProfile;
+  onProfileChange: (profile: ArtistProfile) => void;
+  onReset: () => void;
+  onExportJson: () => void;
+  onExportCsv: () => void;
+}) {
+  return (
+    <section className="settings-workspace">
+      <PageGuide text="Complete your artist profile once so drafts and plans can reuse it. Everything on this page is saved locally in this browser." />
+      <ArtistProfileEditor profile={profile} onChange={onProfileChange} />
+      <div className="settings-grid">
+        <article className="panel settings-card">
+          <span className="icon-box"><Download size={18} /></span>
+          <h2>Back up your contacts</h2>
+          <p>Download your current contact data before making major changes.</p>
+          <div className="settings-actions">
+            <button className="button button-secondary" onClick={onExportJson}><FileJson size={15} /> Export JSON</button>
+            <button className="button button-ghost" onClick={onExportCsv}><Download size={15} /> Export CSV</button>
+          </div>
+        </article>
+        <article className="panel settings-card caution">
+          <span className="icon-box"><RefreshCcw size={18} /></span>
+          <h2>Reset local data</h2>
+          <p>Clear browser edits and lock the private contact bundle again.</p>
+          <button className="button button-ghost" onClick={onReset}><RefreshCcw size={15} /> Reset local data</button>
+        </article>
+      </div>
+      <AutomationBlueprint />
+    </section>
   );
 }
 
@@ -409,6 +969,7 @@ function Header({
       <nav>
         <a href="#radar">Radar</a>
         <a href="#follow-ups">Follow-ups</a>
+        <a href="#tour-builder">Tour Builder</a>
         <a href="#directory">Directory</a>
         <a href="#ask">Ask network</a>
       </nav>
@@ -558,8 +1119,8 @@ function RelationshipSection({
     <section id="radar" className="section-block">
       <SectionHeading
         eyebrow="Relationship radar"
-        title="See where the signal is strongest."
-        copy="Explore your network by geography, category and relationship temperature."
+        title="See your network by location."
+        copy="Filter contacts by relationship warmth or role, then select any signal for details."
         action={<Badge tone="success"><CircleDot size={11} /> {plotted.length} visible signals</Badge>}
       />
       <div className="radar-layout">
@@ -709,9 +1270,9 @@ function FollowUpSection({
   return (
     <section id="follow-ups" className="section-block">
       <SectionHeading
-        eyebrow="This week"
-        title="The right follow-up, before the moment cools."
-        copy="Prioritised from urgency, relationship strength, stage and opportunity."
+        eyebrow="Priority queue"
+        title="Who needs a follow-up?"
+        copy="The most important relationships appear first, based on timing, strength, and opportunity."
         action={<a className="text-link" href="#directory">View directory <ArrowRight size={15} /></a>}
       />
       <div className="followup-list panel">
@@ -769,57 +1330,68 @@ function OpportunitySection({
   onUpdate: (contact: Contact) => void;
   onSelect: (id: string) => void;
 }) {
+  const [selectedStage, setSelectedStage] = useState("Follow-up needed");
+  const stageContacts = contacts
+    .filter((contact) => contact.relationship_stage === selectedStage)
+    .sort((a, b) => b.relationship_score - a.relationship_score);
+
   return (
-    <section className="section-block">
+    <section className="section-block pipeline-workspace">
       <SectionHeading
-        eyebrow="Opportunity radar"
-        title="Every relationship has a current state."
-        copy="Move contacts through the pipeline as conversations develop."
+        eyebrow="Relationship pipeline"
+        title="Focus on one stage at a time."
+        copy="Choose a stage, review its contacts, and update their status as conversations develop."
       />
-      <div className="kanban">
+      <div className="pipeline-stage-tabs" role="tablist" aria-label="Relationship stages">
         {opportunityStages.map((stage) => {
-          const stageContacts = contacts
-            .filter((contact) => contact.relationship_stage === stage)
-            .sort((a, b) => b.relationship_score - a.relationship_score);
+          const count = contacts.filter((contact) => contact.relationship_stage === stage).length;
           return (
-            <article className="kanban-column" key={stage}>
-              <div className="kanban-title">
-                <span className={`stage-dot stage-${stage.toLowerCase().replace(/[^a-z]+/g, "-")}`} />
-                <strong>{stage}</strong>
-                <span>{stageContacts.length}</span>
-              </div>
-              <div className="kanban-cards">
-                {stageContacts.slice(0, 6).map((contact) => (
-                  <div className="kanban-card" key={contact.id}>
-                    <button className="kanban-contact" onClick={() => onSelect(contact.id)}>
-                      <span>{contactLabel(contact)}</span>
-                      <small>{contact.company || contact.category}</small>
-                    </button>
-                    <p>{contact.opportunity_summary || "Relationship to develop"}</p>
-                    <div className="kanban-meta">
-                      <TemperatureBadge value={contact.relationship_temperature} />
-                      <span>{contact.relationship_score}</span>
-                      {contact.is_dummy === "TRUE" && <Badge tone="demo">Demo</Badge>}
-                    </div>
-                    {(contact.introduced_by || contact.connected_to) && (
-                      <small className="connection-note">
-                        <Users size={11} /> {contact.introduced_by ? `Via ${contact.introduced_by}` : contact.connected_to}
-                      </small>
-                    )}
-                    <select
-                      value={contact.relationship_stage}
-                      aria-label={`Change stage for ${contactLabel(contact)}`}
-                      onChange={(event) => onUpdate({ ...contact, relationship_stage: event.target.value })}
-                    >
-                      {opportunityStages.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                  </div>
-                ))}
-                {stageContacts.length > 6 && <div className="more-card">+ {stageContacts.length - 6} more in directory</div>}
-              </div>
-            </article>
+            <button
+              role="tab"
+              aria-selected={selectedStage === stage}
+              className={selectedStage === stage ? "active" : ""}
+              key={stage}
+              onClick={() => setSelectedStage(stage)}
+              title={`Show ${count} contacts in ${stage}`}
+            >
+              <span className={`stage-dot stage-${stage.toLowerCase().replace(/[^a-z]+/g, "-")}`} />
+              <span>{stage}</span>
+              <b>{count}</b>
+            </button>
           );
         })}
+      </div>
+      <div className="pipeline-list panel">
+        <div className="pipeline-list-head">
+          <span>Contact</span><span>Opportunity</span><span>Relationship</span><span>Move to</span>
+        </div>
+        {stageContacts.map((contact) => (
+          <div className="pipeline-list-row" key={contact.id}>
+            <button className="pipeline-person" onClick={() => onSelect(contact.id)}>
+              <span className="avatar">{(contact.first_name || contact.full_name || "?").slice(0, 1)}</span>
+              <span><strong>{contactLabel(contact)}</strong><small>{contact.company || contact.category}</small></span>
+            </button>
+            <div className="pipeline-opportunity">
+              <strong>{contact.opportunity_summary || "Relationship to develop"}</strong>
+              {(contact.introduced_by || contact.connected_to) && (
+                <small><Users size={12} /> {contact.introduced_by ? `Introduced by ${contact.introduced_by}` : contact.connected_to}</small>
+              )}
+            </div>
+            <div className="pipeline-signal">
+              <TemperatureBadge value={contact.relationship_temperature} />
+              <span>{contact.relationship_score}/100</span>
+              {contact.is_dummy === "TRUE" && <Badge tone="demo">Demo</Badge>}
+            </div>
+            <select
+              value={contact.relationship_stage}
+              aria-label={`Change stage for ${contactLabel(contact)}`}
+              onChange={(event) => onUpdate({ ...contact, relationship_stage: event.target.value })}
+            >
+              {opportunityStages.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </div>
+        ))}
+        {!stageContacts.length && <div className="overview-empty"><Check size={18} /> No contacts are in this stage.</div>}
       </div>
     </section>
   );
@@ -875,8 +1447,8 @@ function DirectorySection({
     <section id="directory" className="section-block">
       <SectionHeading
         eyebrow="Contact directory"
-        title="The whole network, without the spreadsheet fog."
-        copy="Search, filter and open any contact to edit the relationship record."
+        title="Find and update a contact."
+        copy="Search the network, narrow the results, and open a card to view the full record."
         action={<Badge>{filtered.length} results</Badge>}
       />
       <div className="directory-toolbar panel">
@@ -973,7 +1545,11 @@ function AskNetwork({ contacts, onSelect }: { contacts: Contact[]; onSelect: (id
 
   const related = answer
     ? contacts
-        .filter((contact) => answer.toLowerCase().includes(contact.full_name.toLowerCase()))
+        .filter(
+          (contact) =>
+            contact.full_name.trim() &&
+            answer.toLowerCase().includes(contact.full_name.toLowerCase()),
+        )
         .slice(0, 5)
     : [];
 
@@ -982,8 +1558,8 @@ function AskNetwork({ contacts, onSelect }: { contacts: Contact[]; onSelect: (id
       <div className="ask-glow" />
       <SectionHeading
         eyebrow="Ask your network"
-        title="Turn 106 contacts into one useful answer."
-        copy="Search the relationship context, not just the rows."
+        title={`Turn ${contacts.length} contacts into one useful answer.`}
+        copy="Ask naturally. The answer is grounded in your saved contact information."
         action={<Badge tone={mode === "ai" ? "success" : "neutral"}><Bot size={12} /> {mode === "ai" ? "OpenAI" : "Local intelligence"}</Badge>}
       />
       <div className="ask-layout">
@@ -998,7 +1574,7 @@ function AskNetwork({ contacts, onSelect }: { contacts: Contact[]; onSelect: (id
           {answer && (
             <div className="chat-message answer-message">
               <span className="chat-avatar"><Sparkles size={18} /></span>
-              <div><strong>{mode === "ai" ? "AI answer" : "Network answer"}</strong><p className="answer-copy">{answer}</p></div>
+              <div><strong>{mode === "ai" ? "AI answer" : "Network answer"}</strong><p className="answer-copy">{answer.replace(/\*\*/g, "")}</p></div>
             </div>
           )}
           {loading && <div className="thinking"><span /><span /><span /> Reading the room</div>}
@@ -1272,9 +1848,17 @@ function AddContactModal({ onClose, onAdd }: { onClose: () => void; onAdd: (cont
   );
 }
 
-function EmailDraftModal({ contact, onClose }: { contact: Contact; onClose: () => void }) {
+function EmailDraftModal({
+  contact,
+  profile,
+  onClose,
+}: {
+  contact: Contact;
+  profile: ArtistProfile;
+  onClose: () => void;
+}) {
   const [intent, setIntent] = useState<EmailIntent>("Follow up after meeting");
-  const [draft, setDraft] = useState<EmailDraft>(() => generateLocalEmailDraft(contact, intent));
+  const [draft, setDraft] = useState<EmailDraft>(() => generateLocalEmailDraft(contact, intent, profile));
   const [loading, setLoading] = useState(false);
   const [source, setSource] = useState<"local" | "ai">("local");
   const [copied, setCopied] = useState(false);
@@ -1285,18 +1869,18 @@ function EmailDraftModal({ contact, onClose }: { contact: Contact; onClose: () =
       const response = await fetch("/api/generate-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contact, intent }),
+        body: JSON.stringify({ contact, intent, profile }),
       });
       const data = await response.json();
       if (response.ok && data.available && data.draft) {
         setDraft(data.draft);
         setSource("ai");
       } else {
-        setDraft(generateLocalEmailDraft(contact, intent));
+        setDraft(generateLocalEmailDraft(contact, intent, profile));
         setSource("local");
       }
     } catch {
-      setDraft(generateLocalEmailDraft(contact, intent));
+      setDraft(generateLocalEmailDraft(contact, intent, profile));
       setSource("local");
     } finally {
       setLoading(false);
@@ -1304,9 +1888,9 @@ function EmailDraftModal({ contact, onClose }: { contact: Contact; onClose: () =
   };
 
   useEffect(() => {
-    setDraft(generateLocalEmailDraft(contact, intent));
+    setDraft(generateLocalEmailDraft(contact, intent, profile));
     setSource("local");
-  }, [contact, intent]);
+  }, [contact, intent, profile]);
 
   const copyDraft = async () => {
     await navigator.clipboard.writeText(`Subject: ${draft.subject}\n\n${draft.body}`);

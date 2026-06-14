@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const response = await client.responses.create({
       model: getOpenAIModel(),
       instructions:
-        "You are a sharp music-industry relationship strategist. Answer only from the supplied contacts. Be concise, rank useful people, explain why, and end with one practical outreach move. Never invent contact facts.",
+        "You are a sharp music-industry relationship strategist. Answer only from the supplied contacts. Be concise, recommend no more than five people, explain each in one short sentence, and end with one practical outreach move. Use plain text without markdown symbols. Never invent contact facts.",
       input: `Question: ${body.query}\n\nContacts:\n${JSON.stringify(compactContacts)}`,
     });
     return NextResponse.json({ available: true, answer: response.output_text });

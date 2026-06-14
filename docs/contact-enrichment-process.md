@@ -33,6 +33,50 @@ The most important enrichment gap is contactability:
 The workbook is already strong enough for prioritisation. Enrichment should
 focus first on finding verified booking routes and improving scheduling data.
 
+## Current Prototype Behaviour
+
+The app currently includes a **Simulate Make enrichment** action on a contact
+record. This is a local, deterministic preview of what an automation could do.
+It does not browse the web, call Make, verify a person, or discover contact
+details.
+
+The simulation currently:
+
+1. reads the contact's existing notes and latest-interaction text
+2. suggests a relationship stage from phrases such as "asked", "send",
+   "offered to connect", or "awaiting reply"
+3. increases the relationship score only when existing fields provide evidence,
+   such as a known email, detailed notes, or a warm introduction
+4. derives relationship temperature from the resulting score
+5. proposes a follow-up date based on priority:
+   - High: three days
+   - Medium: seven days
+   - Low: fourteen days
+6. creates a short AI-style summary from fields already stored in the record
+7. marks `make_automation_status` as `enriched_in_prototype`
+
+This simulation is useful for demonstrating workflow and interface behaviour,
+but its output is not verified enrichment. A production enrichment must follow
+the research, provenance, confidence, and approval stages below.
+
+The current app contact model stores:
+
+```text
+identity: name, position, organisation
+location: city, country, coordinates, address
+classification: category, tags, source type
+relationship: stage, score, priority, temperature
+history: notes, latest interaction, last-contact date
+workflow: next follow-up, next action, opportunity summary
+network: introduced by, connected to
+contactability: email
+automation: Make status and AI summary
+```
+
+The workbook contains useful venue and gig fields that are not yet represented
+directly in the app model. Those fields should be added before production
+import rather than compressed into notes.
+
 ## Core Principles
 
 ### Preserve source truth
@@ -379,6 +423,43 @@ A future Make workflow may:
 5. notify the user when a follow-up becomes due
 
 It should never auto-send Gmail messages.
+
+### Recommended automation stages
+
+A production workflow should use explicit states so suggested information can
+never be mistaken for verified data:
+
+```text
+not_started
+researching
+suggested
+needs_review
+approved
+rejected
+verified
+stale
+```
+
+The automation should write proposed values to a review table or suggestion
+object first. Only an approval action should copy the value into the active
+contact record.
+
+Suggested Make scenario:
+
+1. receive a venue ID and requested fields from the app
+2. retrieve the existing Airtable venue and relationship history
+3. search approved public sources in priority order
+4. return candidate values with source URLs and timestamps
+5. reject unsupported or conflicting values
+6. create review items for the remaining suggestions
+7. notify the user that review is ready
+8. apply only approved fields to Airtable
+9. return the updated record to the app
+10. create a Gmail draft only after the contact route and outreach copy are
+    separately approved
+
+Use idempotency keys such as `venue_id + field + source_url + verified_at` so a
+retry does not create duplicate review items.
 
 ## Privacy and AI Boundaries
 
