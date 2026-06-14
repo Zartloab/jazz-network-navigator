@@ -117,6 +117,9 @@ export type AutomationPayload = {
 
 export type AppView =
   | "home"
+  | "work"
+  | "relationships"
+  | "discover"
   | "tour"
   | "research"
   | "studio"
@@ -126,6 +129,27 @@ export type AppView =
   | "radar"
   | "ask"
   | "settings";
+
+export type WorkProjectType =
+  | "Tour"
+  | "Release"
+  | "Campaign"
+  | "Collaboration";
+
+export type WorkProjectStatus = "Idea" | "Planning" | "Active" | "Complete";
+
+export type WorkProject = {
+  id: string;
+  name: string;
+  type: WorkProjectType;
+  status: WorkProjectStatus;
+  startDate: string;
+  endDate: string;
+  goal: string;
+  targetValue: string;
+  notes: string;
+  createdAt: string;
+};
 
 export type OpportunityType =
   | "Booking"

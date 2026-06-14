@@ -15,6 +15,7 @@ import {
   FileJson,
   Filter,
   Flame,
+  FolderKanban,
   Globe2,
   HelpCircle,
   Home,
@@ -80,6 +81,7 @@ import TourBuilder from "@/components/TourBuilder";
 import OpportunityScout from "@/components/OpportunityScout";
 import ArtistProfileEditor from "@/components/ArtistProfileEditor";
 import CreativeStudio from "@/components/CreativeStudio";
+import WorkHub from "@/components/WorkHub";
 import { emptyArtistProfile } from "@/lib/creative-studio";
 import { buildTodayTasks } from "@/lib/today";
 import {
@@ -127,9 +129,24 @@ type MapFilter = (typeof mapFilters)[number];
 
 const viewDetails: Record<AppView, { title: string; description: string; help: string }> = {
   home: {
-    title: "Home",
+    title: "Today",
     description: "A simple view of what needs your attention today.",
     help: "Start here. Choose one recommended action, or use the shortcuts to plan a tour, follow up, find a contact, or ask AI.",
+  },
+  work: {
+    title: "Projects",
+    description: "Plan and track tours, releases, campaigns, and collaborations.",
+    help: "Create a project to keep its goal, dates, related work, deadlines, and outcomes in one place.",
+  },
+  relationships: {
+    title: "Relationships",
+    description: "Follow up, move conversations forward, and find anyone in your network.",
+    help: "Use the tabs to work through follow-ups, update the relationship pipeline, or search all contacts.",
+  },
+  discover: {
+    title: "Opportunities",
+    description: "Research openings and find the strongest route through your network.",
+    help: "Scout for opportunities first, then use the network map or Ask AI when you need a different view.",
   },
   tour: {
     title: "Tour Builder",
@@ -172,8 +189,8 @@ const viewDetails: Record<AppView, { title: string; description: string; help: s
     help: "Ask one specific question, such as who to contact in a city or which relationships deserve attention this week.",
   },
   settings: {
-    title: "Settings & Export",
-    description: "Manage local data, exports, and future automations.",
+    title: "Settings",
+    description: "Check data quality, create backups, and prepare future automations.",
     help: "Your contact edits stay in this browser. Export a backup before resetting local data.",
   },
 };
@@ -405,6 +422,7 @@ export default function JazzDashboard() {
       "jazz-network-navigator-research-brief-v1",
       "jazz-network-navigator-creative-packs-v1",
       "jazz-network-navigator-tour-plan-v1",
+      "jazz-network-navigator-projects-v1",
     ].forEach((key) => window.localStorage.removeItem(key));
     setContacts([]);
     setOpportunities([]);
@@ -498,6 +516,45 @@ export default function JazzDashboard() {
                 onAdd={() => setShowAdd(true)}
               />
             )}
+            {activeView === "work" && (
+              <WorkHub
+                contacts={contacts}
+                opportunities={opportunities}
+                profile={artistProfile}
+                onNavigate={navigate}
+              />
+            )}
+            {activeView === "relationships" && (
+              <RelationshipsWorkspace
+                contacts={contacts}
+                onUpdate={updateContact}
+                onSelect={setSelectedId}
+                onEmail={setEmailContactId}
+                search={search}
+                onSearch={setSearch}
+                categoryFilter={categoryFilter}
+                onCategoryFilter={setCategoryFilter}
+                temperatureFilter={temperatureFilter}
+                onTemperatureFilter={setTemperatureFilter}
+                priorityFilter={priorityFilter}
+                onPriorityFilter={setPriorityFilter}
+                sourceFilter={sourceFilter}
+                onSourceFilter={setSourceFilter}
+              />
+            )}
+            {activeView === "discover" && (
+              <DiscoverWorkspace
+                contacts={contacts}
+                profile={artistProfile}
+                opportunities={opportunities}
+                onOpportunityChange={setOpportunities}
+                onSelect={setSelectedId}
+                mapFilter={mapFilter}
+                onMapFilter={setMapFilter}
+                mapHoverId={mapHoverId}
+                onMapHover={setMapHoverId}
+              />
+            )}
             {activeView === "radar" && (
               <>
                 <PageGuide text="Filter the map, then select any signal to open that contact’s full record." />
@@ -528,9 +585,9 @@ export default function JazzDashboard() {
               />
             )}
             {activeView === "studio" && (
-              <CreativeStudio
+              <StudioWorkspace
                 profile={artistProfile}
-                onOpenProfile={() => navigate("settings")}
+                onProfileChange={setArtistProfile}
               />
             )}
             {activeView === "pipeline" && (
@@ -567,8 +624,6 @@ export default function JazzDashboard() {
             {activeView === "settings" && (
               <SettingsWorkspace
                 contacts={contacts}
-                profile={artistProfile}
-                onProfileChange={setArtistProfile}
                 onSelectContact={setSelectedId}
                 onReset={resetData}
                 onExportJson={exportJson}
@@ -620,31 +675,36 @@ function AppSidebar({
   onCloseMobile: () => void;
 }) {
   const primary = [
-    { view: "home" as AppView, label: "Home", icon: Home, hint: "Today’s priorities" },
-    { view: "tour" as AppView, label: "Tour Builder", icon: Route, hint: "Plan outreach" },
-    { view: "research" as AppView, label: "Opportunity Scout", icon: ScanSearch, hint: "Find new openings" },
-    { view: "studio" as AppView, label: "Creative Studio", icon: WandSparkles, hint: "Build pitches and stories" },
-    { view: "follow-ups" as AppView, label: "Follow-ups", icon: ListChecks, hint: "Messages due" },
-    { view: "directory" as AppView, label: "Contacts", icon: Users, hint: "Search the network" },
-    { view: "pipeline" as AppView, label: "Pipeline", icon: LayoutGrid, hint: "Track progress" },
+    { view: "home" as AppView, label: "Today", icon: Home, hint: "What needs attention" },
+    { view: "work" as AppView, label: "Projects", icon: FolderKanban, hint: "Tours, releases, campaigns" },
+    { view: "relationships" as AppView, label: "Relationships", icon: Users, hint: "Follow-ups and contacts" },
+    { view: "discover" as AppView, label: "Opportunities", icon: ScanSearch, hint: "Research and network insight" },
+    { view: "studio" as AppView, label: "Studio", icon: WandSparkles, hint: "Pitches and creative work" },
   ];
-  const insight = [
-    { view: "radar" as AppView, label: "Network Map", icon: MapIcon, hint: "See strong locations" },
-    { view: "ask" as AppView, label: "Ask AI", icon: Bot, hint: "Get a useful answer" },
-  ];
+  const activeGroup: AppView =
+    activeView === "tour"
+      ? "work"
+      : ["follow-ups", "directory", "pipeline"].includes(activeView)
+        ? "relationships"
+        : ["research", "radar", "ask"].includes(activeView)
+          ? "discover"
+          : activeView;
 
-  const renderItem = ({ view, label, icon: Icon, hint }: (typeof primary)[number]) => (
+  const renderItem = ({ view, label, icon: Icon, hint }: (typeof primary)[number]) => {
+    const active = activeGroup === view;
+    return (
     <button
       key={view}
-      className={`sidebar-link${activeView === view ? " active" : ""}`}
+      className={`sidebar-link${active ? " active" : ""}`}
       onClick={() => onNavigate(view)}
-      aria-current={activeView === view ? "page" : undefined}
+      aria-current={active ? "page" : undefined}
       data-tooltip={`${label}: ${viewDetails[view].help}`}
     >
       <Icon size={19} />
       <span><strong>{label}</strong><small>{hint}</small></span>
     </button>
-  );
+    );
+  };
 
   return (
     <aside className={`app-sidebar${open ? "" : " collapsed"}${mobileOpen ? " mobile-open" : ""}`}>
@@ -654,10 +714,8 @@ function AppSidebar({
         <button className="sidebar-mobile-close" onClick={onCloseMobile} aria-label="Close navigation"><X size={18} /></button>
       </div>
       <nav className="sidebar-nav" aria-label="Main navigation">
-        <span className="sidebar-section-label">Workspace</span>
+        <span className="sidebar-section-label">Your workspace</span>
         {primary.map(renderItem)}
-        <span className="sidebar-section-label">Insights</span>
-        {insight.map(renderItem)}
       </nav>
       <div className="sidebar-footer">
         <button
@@ -666,7 +724,7 @@ function AppSidebar({
           data-tooltip="Settings, exports, and automation readiness"
         >
           <Settings size={19} />
-          <span><strong>Settings & Export</strong><small>Manage your data</small></span>
+          <span><strong>Settings</strong><small>Data, backups, automation</small></span>
         </button>
         <div className="privacy-note"><Check size={13} /><span>Saved locally in this browser</span></div>
         <button className="sidebar-collapse" onClick={onToggle} title={open ? "Collapse sidebar" : "Expand sidebar"}>
@@ -783,6 +841,213 @@ function PageGuide({ text }: { text: string }) {
   return <div className="page-guide"><HelpCircle size={16} /><span>{text}</span></div>;
 }
 
+function RelationshipsWorkspace({
+  contacts,
+  onUpdate,
+  onSelect,
+  onEmail,
+  search,
+  onSearch,
+  categoryFilter,
+  onCategoryFilter,
+  temperatureFilter,
+  onTemperatureFilter,
+  priorityFilter,
+  onPriorityFilter,
+  sourceFilter,
+  onSourceFilter,
+}: {
+  contacts: Contact[];
+  onUpdate: (contact: Contact) => void;
+  onSelect: (id: string) => void;
+  onEmail: (id: string) => void;
+  search: string;
+  onSearch: (value: string) => void;
+  categoryFilter: string;
+  onCategoryFilter: (value: string) => void;
+  temperatureFilter: string;
+  onTemperatureFilter: (value: string) => void;
+  priorityFilter: string;
+  onPriorityFilter: (value: string) => void;
+  sourceFilter: string;
+  onSourceFilter: (value: string) => void;
+}) {
+  const [tab, setTab] = useState<"follow-ups" | "pipeline" | "contacts">("follow-ups");
+  const due = contacts.filter((contact) => isDue(contact.next_follow_up_date)).length;
+  const active = contacts.filter((contact) => contact.relationship_stage !== "Unqualified").length;
+
+  return (
+    <section className="grouped-workspace">
+      <div className="grouped-intro">
+        <div>
+          <span className="eyebrow">Relationship workspace</span>
+          <h2>Keep conversations moving.</h2>
+          <p>Follow up first, update what changed, and search the full network only when you need to.</p>
+        </div>
+        <div className="grouped-summary">
+          <span><strong>{due}</strong><small>due now</small></span>
+          <span><strong>{active}</strong><small>active</small></span>
+          <span><strong>{contacts.length}</strong><small>total</small></span>
+        </div>
+      </div>
+      <div className="hub-tabs" role="tablist" aria-label="Relationship tools">
+        <button className={tab === "follow-ups" ? "active" : ""} onClick={() => setTab("follow-ups")}>
+          <ListChecks size={15} /> Follow-ups {due > 0 && <b>{due}</b>}
+        </button>
+        <button className={tab === "pipeline" ? "active" : ""} onClick={() => setTab("pipeline")}>
+          <LayoutGrid size={15} /> Pipeline
+        </button>
+        <button className={tab === "contacts" ? "active" : ""} onClick={() => setTab("contacts")}>
+          <Users size={15} /> All contacts
+        </button>
+      </div>
+      {tab === "follow-ups" && (
+        <>
+          <PageGuide text="Start at the top. Create a draft, review it, send it yourself, then record the follow-up." />
+          <FollowUpSection contacts={contacts} onUpdate={onUpdate} onSelect={onSelect} onEmail={onEmail} />
+        </>
+      )}
+      {tab === "pipeline" && (
+        <>
+          <PageGuide text="Choose one stage, then update contacts only when a real conversation moves forward." />
+          <OpportunitySection contacts={contacts} onUpdate={onUpdate} onSelect={onSelect} />
+        </>
+      )}
+      {tab === "contacts" && (
+        <>
+          <PageGuide text="Search first, then narrow the list with filters. Open a card to edit the complete relationship record." />
+          <DirectorySection
+            contacts={contacts}
+            search={search}
+            onSearch={onSearch}
+            categoryFilter={categoryFilter}
+            onCategoryFilter={onCategoryFilter}
+            temperatureFilter={temperatureFilter}
+            onTemperatureFilter={onTemperatureFilter}
+            priorityFilter={priorityFilter}
+            onPriorityFilter={onPriorityFilter}
+            sourceFilter={sourceFilter}
+            onSourceFilter={onSourceFilter}
+            onSelect={onSelect}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
+function DiscoverWorkspace({
+  contacts,
+  profile,
+  opportunities,
+  onOpportunityChange,
+  onSelect,
+  mapFilter,
+  onMapFilter,
+  mapHoverId,
+  onMapHover,
+}: {
+  contacts: Contact[];
+  profile: ArtistProfile;
+  opportunities: ResearchOpportunity[];
+  onOpportunityChange: (opportunities: ResearchOpportunity[]) => void;
+  onSelect: (id: string) => void;
+  mapFilter: MapFilter;
+  onMapFilter: (filter: MapFilter) => void;
+  mapHoverId: string | null;
+  onMapHover: (id: string | null) => void;
+}) {
+  const [tab, setTab] = useState<"scout" | "map" | "ask">("scout");
+  const saved = opportunities.filter(
+    (opportunity) => opportunity.status === "Saved" || opportunity.status === "In progress",
+  ).length;
+
+  return (
+    <section className="grouped-workspace">
+      <div className="grouped-intro">
+        <div>
+          <span className="eyebrow">Research workspace</span>
+          <h2>Find openings with a reason to act.</h2>
+          <p>Search for opportunities, understand where your network is strongest, or ask a focused question.</p>
+        </div>
+        <div className="grouped-summary">
+          <span><strong>{saved}</strong><small>saved</small></span>
+          <span><strong>{opportunities.filter((item) => item.sourceType === "web").length}</strong><small>live sources</small></span>
+        </div>
+      </div>
+      <div className="hub-tabs" role="tablist" aria-label="Opportunity tools">
+        <button className={tab === "scout" ? "active" : ""} onClick={() => setTab("scout")}>
+          <ScanSearch size={15} /> Scout {saved > 0 && <b>{saved}</b>}
+        </button>
+        <button className={tab === "map" ? "active" : ""} onClick={() => setTab("map")}>
+          <MapIcon size={15} /> Network map
+        </button>
+        <button className={tab === "ask" ? "active" : ""} onClick={() => setTab("ask")}>
+          <Bot size={15} /> Ask AI
+        </button>
+      </div>
+      {tab === "scout" && (
+        <OpportunityScout
+          contacts={contacts}
+          profile={profile}
+          opportunities={opportunities}
+          onChange={onOpportunityChange}
+          onSelectContact={onSelect}
+        />
+      )}
+      {tab === "map" && (
+        <>
+          <PageGuide text="Filter the map, then select a signal to open that contact’s full record." />
+          <RelationshipSection
+            contacts={contacts}
+            filter={mapFilter}
+            onFilter={onMapFilter}
+            hoverId={mapHoverId}
+            onHover={onMapHover}
+            onSelect={onSelect}
+          />
+        </>
+      )}
+      {tab === "ask" && (
+        <>
+          <PageGuide text="Ask one focused question. The answer uses information already stored in your contact network." />
+          <AskNetwork contacts={contacts} onSelect={onSelect} />
+        </>
+      )}
+    </section>
+  );
+}
+
+function StudioWorkspace({
+  profile,
+  onProfileChange,
+}: {
+  profile: ArtistProfile;
+  onProfileChange: (profile: ArtistProfile) => void;
+}) {
+  const [tab, setTab] = useState<"create" | "profile">("create");
+  return (
+    <section className="grouped-workspace">
+      <div className="hub-tabs" role="tablist" aria-label="Creative Studio">
+        <button className={tab === "create" ? "active" : ""} onClick={() => setTab("create")}>
+          <WandSparkles size={15} /> Create
+        </button>
+        <button className={tab === "profile" ? "active" : ""} onClick={() => setTab("profile")}>
+          <Music2 size={15} /> Artist profile
+        </button>
+      </div>
+      {tab === "create" ? (
+        <CreativeStudio profile={profile} onOpenProfile={() => setTab("profile")} />
+      ) : (
+        <>
+          <PageGuide text="Complete this once. Tours, research, drafts, and creative tools reuse the same factual context." />
+          <ArtistProfileEditor profile={profile} onChange={onProfileChange} />
+        </>
+      )}
+    </section>
+  );
+}
+
 function DashboardOverview({
   contacts,
   opportunities,
@@ -823,9 +1088,9 @@ function DashboardOverview({
   const urgentToday = todayTasks.filter((task) => task.priority === "High").length;
 
   const quickActions = [
-    { title: "Plan a tour", copy: "Find contacts and prepare outreach drafts.", icon: Route, view: "tour" as AppView },
-    { title: "Find opportunities", copy: "Scan warm routes and current openings.", icon: ScanSearch, view: "research" as AppView },
-    { title: "Handle follow-ups", copy: `${due.length} currently due or overdue.`, icon: ListChecks, view: "follow-ups" as AppView },
+    { title: "Open projects", copy: "Run a tour, release, campaign, or collaboration.", icon: FolderKanban, view: "work" as AppView },
+    { title: "Find opportunities", copy: "Research openings and warm routes.", icon: ScanSearch, view: "discover" as AppView },
+    { title: "Manage relationships", copy: `${due.length} follow-ups currently need attention.`, icon: Users, view: "relationships" as AppView },
     { title: "Create a pitch", copy: "Build booking, press, and campaign material.", icon: WandSparkles, view: "studio" as AppView },
   ];
 
@@ -962,44 +1227,56 @@ function TodayTaskRow({
 
 function SettingsWorkspace({
   contacts,
-  profile,
-  onProfileChange,
   onSelectContact,
   onReset,
   onExportJson,
   onExportCsv,
 }: {
   contacts: Contact[];
-  profile: ArtistProfile;
-  onProfileChange: (profile: ArtistProfile) => void;
   onSelectContact: (id: string) => void;
   onReset: () => void;
   onExportJson: () => void;
   onExportCsv: () => void;
 }) {
+  const [tab, setTab] = useState<"quality" | "data">("quality");
   return (
     <section className="settings-workspace">
-      <PageGuide text="Complete your artist profile once so drafts and plans can reuse it. Everything on this page is saved locally in this browser." />
-      <ArtistProfileEditor profile={profile} onChange={onProfileChange} />
-      <DataReadinessPanel contacts={contacts} onSelect={onSelectContact} />
-      <div className="settings-grid">
-        <article className="panel settings-card">
-          <span className="icon-box"><Download size={18} /></span>
-          <h2>Back up your contacts</h2>
-          <p>Download your current contact data before making major changes.</p>
-          <div className="settings-actions">
-            <button className="button button-secondary" onClick={onExportJson}><FileJson size={15} /> Export JSON</button>
-            <button className="button button-ghost" onClick={onExportCsv}><Download size={15} /> Export CSV</button>
-          </div>
-        </article>
-        <article className="panel settings-card caution">
-          <span className="icon-box"><RefreshCcw size={18} /></span>
-          <h2>Reset local data</h2>
-          <p>Clear browser edits and lock the private contact bundle again.</p>
-          <button className="button button-ghost" onClick={onReset}><RefreshCcw size={15} /> Reset local data</button>
-        </article>
+      <div className="hub-tabs" role="tablist" aria-label="Settings">
+        <button className={tab === "quality" ? "active" : ""} onClick={() => setTab("quality")}>
+          <Check size={15} /> Data quality
+        </button>
+        <button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>
+          <Download size={15} /> Backups & automation
+        </button>
       </div>
-      <AutomationBlueprint />
+      {tab === "quality" ? (
+        <>
+          <PageGuide text="Improve the details that have the greatest practical effect on outreach and follow-up." />
+          <DataReadinessPanel contacts={contacts} onSelect={onSelectContact} />
+        </>
+      ) : (
+        <>
+          <PageGuide text="Create a backup before major changes. Reset only when you intend to clear this browser’s workspace." />
+          <div className="settings-grid">
+            <article className="panel settings-card">
+              <span className="icon-box"><Download size={18} /></span>
+              <h2>Back up your contacts</h2>
+              <p>Download your current contact data before making major changes.</p>
+              <div className="settings-actions">
+                <button className="button button-secondary" onClick={onExportJson}><FileJson size={15} /> Export JSON</button>
+                <button className="button button-ghost" onClick={onExportCsv}><Download size={15} /> Export CSV</button>
+              </div>
+            </article>
+            <article className="panel settings-card caution">
+              <span className="icon-box"><RefreshCcw size={18} /></span>
+              <h2>Reset local data</h2>
+              <p>Clear browser edits and lock the private contact bundle again.</p>
+              <button className="button button-ghost" onClick={onReset}><RefreshCcw size={15} /> Reset local data</button>
+            </article>
+          </div>
+          <AutomationBlueprint />
+        </>
+      )}
     </section>
   );
 }
