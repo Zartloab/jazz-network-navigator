@@ -50,6 +50,13 @@ export type ContactActivity = {
   createdAt: string;
 };
 
+export type RelationshipNoteSuggestion = {
+  stage: string;
+  followUpDate: string;
+  nextAction: string;
+  reason: string;
+};
+
 export type EmailIntent =
   | "Follow up after meeting"
   | "Send music / EPK"

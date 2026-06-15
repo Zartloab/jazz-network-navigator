@@ -1837,6 +1837,82 @@ footer {
   margin-top: 9px;
 }
 
+.activity-suggestion {
+  background: linear-gradient(145deg, rgba(155,135,255,.09), rgba(91,213,208,.035));
+  border: 1px solid rgba(155,135,255,.2);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.activity-suggestion-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.activity-suggestion-head > span {
+  align-items: center;
+  color: var(--violet-bright);
+  display: flex;
+  font-size: 8px;
+  font-weight: 800;
+  gap: 6px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.activity-suggestion > strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 13px;
+}
+
+.activity-suggestion > p {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+}
+
+.activity-suggestion-meta {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 13px;
+}
+
+.activity-suggestion-meta > span {
+  background: rgba(8,13,25,.45);
+  border: 1px solid rgba(165,174,220,.1);
+  border-radius: 9px;
+  color: var(--muted-strong);
+  font-size: 9px;
+  padding: 10px;
+}
+
+.activity-suggestion-meta small {
+  color: var(--muted);
+  display: block;
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.activity-suggestion > button {
+  margin-top: 11px;
+}
+
+.activity-suggestion > small {
+  color: #7f89a7;
+  display: block;
+  font-size: 7px;
+  line-height: 1.45;
+  margin-top: 8px;
+}
+
 .activity-heading {
   align-items: flex-end;
   border-bottom: 1px solid var(--line);

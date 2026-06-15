@@ -4,6 +4,7 @@ import {
   EmailDraft,
   EmailIntent,
   Priority,
+  RelationshipNoteSuggestion,
   Temperature,
 } from "@/lib/types";
 
@@ -114,6 +115,68 @@ function datePlusDays(days: number): string {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+export function suggestRelationshipNextStep(
+  note: string,
+  contact: Contact,
+): RelationshipNoteSuggestion {
+  const normalized = note.toLowerCase();
+  const explicitDays = normalized.match(/\bin\s+(\d{1,2})\s+days?\b/);
+  const followUpDays = explicitDays
+    ? Math.min(60, Math.max(1, Number(explicitDays[1])))
+    : /\btomorrow\b/.test(normalized)
+      ? 1
+      : /\b(two weeks|fortnight)\b/.test(normalized)
+        ? 14
+        : /\b(next week|in a week)\b/.test(normalized)
+          ? 7
+          : contact.priority === "High"
+            ? 3
+            : contact.priority === "Low"
+              ? 14
+              : 7;
+
+  let stage = "Follow-up needed";
+  let reason = "The note contains a clear relationship update that deserves a scheduled next move.";
+
+  if (/\b(sent|emailed|shared|followed up|follow-up sent)\b/.test(normalized)) {
+    stage = "Awaiting reply";
+    reason = "The note suggests outreach has already happened and a response is pending.";
+  } else if (/\b(asked|requested|send|epk|press kit|live video|materials|music)\b/.test(normalized)) {
+    stage = "Materials requested";
+    reason = "The note appears to include a request for materials or information.";
+  } else if (/\b(introduc|referr|connect me|connect us)\w*/.test(normalized)) {
+    stage = "Referral lead";
+    reason = "The note points to an introduction or referral path.";
+  } else if (/\b(met|meeting|spoke|call|coffee|conversation)\b/.test(normalized)) {
+    stage = "Met / warm contact";
+    reason = "The note records a direct conversation or meeting.";
+  }
+
+  let nextAction = contact.recommended_next_action || "Follow up with one clear question.";
+  if (/\b(sent|emailed|shared|followed up|follow-up sent)\b/.test(normalized)) {
+    nextAction = "Wait for a reply, then follow up with one specific question.";
+  } else if (/\b(epk|press kit|live video|materials|music)\b/.test(normalized)) {
+    nextAction = "Send the requested materials and confirm the next decision point.";
+  } else if (/\b(introduc|referr|connect me|connect us)\w*/.test(normalized)) {
+    nextAction = "Ask for the introduction and provide a short forwardable message.";
+  } else if (/\b(date|dates|availability|available|hold)\b/.test(normalized)) {
+    nextAction = "Send clear availability and ask which dates are realistic.";
+  } else if (/\b(contract|deposit|invoice|fee|budget|terms)\b/.test(normalized)) {
+    nextAction = "Confirm the commercial terms and ask what is needed to move forward.";
+  } else if (/\b(press|radio|interview|review|feature)\b/.test(normalized)) {
+    nextAction = "Send one concise story angle with the strongest relevant listening link.";
+  } else if (/\b(call|meeting|coffee)\b/.test(normalized)) {
+    nextAction = "Propose two simple times for the next conversation.";
+  }
+
+  return {
+    stage,
+    followUpDate: datePlusDays(followUpDays),
+    nextAction,
+    reason,
+  };
 }
 
 function temperatureForScore(score: number): Temperature {

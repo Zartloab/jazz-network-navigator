@@ -61,6 +61,7 @@ import {
   getSuggestedOutreachAngle,
   opportunityStages,
   simulateMakeEnrichment,
+  suggestRelationshipNextStep,
 } from "@/lib/local-ai";
 import {
   buildAppNotifications,
@@ -77,6 +78,7 @@ import {
   EmailIntent,
   Priority,
   ResearchOpportunity,
+  RelationshipNoteSuggestion,
   TodayTask,
   Temperature,
   WorkProject,
@@ -2464,6 +2466,7 @@ function ContactDrawer({
   const [draft, setDraft] = useState(contact);
   const [drawerTab, setDrawerTab] = useState<"profile" | "activity">("profile");
   const [activityNote, setActivityNote] = useState("");
+  const [noteSuggestion, setNoteSuggestion] = useState<RelationshipNoteSuggestion | null>(null);
   const linkedProjectId =
     projects.find((project) => project.contactIds.includes(contact.id))?.id || "";
 
@@ -2471,6 +2474,7 @@ function ContactDrawer({
     setDraft(contact);
     setDrawerTab("profile");
     setActivityNote("");
+    setNoteSuggestion(null);
   }, [contact]);
 
   const save = () => {
@@ -2521,8 +2525,21 @@ function ContactDrawer({
 
   const addNote = () => {
     if (!activityNote.trim()) return;
-    onAddActivity(contact.id, "note", "Note added", activityNote);
+    const note = activityNote.trim();
+    onAddActivity(contact.id, "note", "Note added", note);
+    setNoteSuggestion(suggestRelationshipNextStep(note, draft));
     setActivityNote("");
+  };
+
+  const applyNoteSuggestion = () => {
+    if (!noteSuggestion) return;
+    setDraft({
+      ...draft,
+      relationship_stage: noteSuggestion.stage,
+      next_follow_up_date: noteSuggestion.followUpDate,
+      recommended_next_action: noteSuggestion.nextAction,
+    });
+    setDrawerTab("profile");
   };
 
   const latestInteraction = contact.latest_interaction.trim();
@@ -2634,9 +2651,27 @@ function ContactDrawer({
                 aria-label="New relationship note"
               />
               <button className="button button-secondary" onClick={addNote} disabled={!activityNote.trim()}>
-                <Plus size={14} /> Add note
+                <Sparkles size={14} /> Add note and suggest next step
               </button>
             </section>
+            {noteSuggestion && (
+              <section className="activity-suggestion">
+                <div className="activity-suggestion-head">
+                  <span><Sparkles size={14} /> Suggested update</span>
+                  <Badge tone="neutral">Not applied</Badge>
+                </div>
+                <strong>{noteSuggestion.nextAction}</strong>
+                <p>{noteSuggestion.reason}</p>
+                <div className="activity-suggestion-meta">
+                  <span><small>Stage</small>{noteSuggestion.stage}</span>
+                  <span><small>Follow up</small>{formatDate(noteSuggestion.followUpDate)}</span>
+                </div>
+                <button className="button button-primary" onClick={applyNoteSuggestion}>
+                  Review in profile <ArrowRight size={14} />
+                </button>
+                <small>Nothing changes until you review the profile and select Save changes.</small>
+              </section>
+            )}
             <section className="activity-timeline">
               <div className="activity-heading">
                 <div><span className="eyebrow">History</span><strong>What has happened</strong></div>

@@ -239,6 +239,11 @@ Activity is stored locally in the browser. Generated drafts and copied emails
 are not logged as sent communication, and the timeline never claims that an
 email was delivered.
 
+When a user adds a relationship note, the local assistant suggests a pipeline
+stage, next action, and follow-up date from the language in that note. The
+suggestion is not applied automatically: the user reviews the proposed profile
+changes and must select **Save changes**.
+
 ## Universal search
 
 Select **Search** in the top bar or press `Cmd + K` on macOS and `Ctrl + K` on
