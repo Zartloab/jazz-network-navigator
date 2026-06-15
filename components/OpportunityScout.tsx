@@ -8,6 +8,7 @@ import {
   CircleDot,
   Clock3,
   ExternalLink,
+  FolderKanban,
   Globe2,
   Lightbulb,
   MapPin,
@@ -19,7 +20,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
 import {
   buildLocalOpportunityScan,
   mergeOpportunities,
@@ -31,6 +32,7 @@ import {
   OpportunityType,
   ResearchBrief,
   ResearchOpportunity,
+  WorkProject,
 } from "@/lib/types";
 
 const DEFAULT_BRIEF: ResearchBrief = {
@@ -69,12 +71,16 @@ export default function OpportunityScout({
   opportunities,
   onChange,
   onSelectContact,
+  projects,
+  onProjectsChange,
 }: {
   contacts: Contact[];
   profile: ArtistProfile;
   opportunities: ResearchOpportunity[];
   onChange: (opportunities: ResearchOpportunity[]) => void;
   onSelectContact: (id: string) => void;
+  projects: WorkProject[];
+  onProjectsChange: Dispatch<SetStateAction<WorkProject[]>>;
 }) {
   const [brief, setBrief] = useState<ResearchBrief>(DEFAULT_BRIEF);
   const [filter, setFilter] = useState<(typeof filters)[number]>("New");
@@ -132,6 +138,19 @@ export default function OpportunityScout({
         opportunity.id === id ? { ...opportunity, status } : opportunity,
       ),
     );
+  };
+
+  const linkToProject = (opportunityId: string, projectId: string) => {
+    onProjectsChange((current) =>
+      current.map((project) => ({
+        ...project,
+        opportunityIds:
+          project.id === projectId
+            ? [...new Set([...project.opportunityIds, opportunityId])]
+            : project.opportunityIds.filter((id) => id !== opportunityId),
+      })),
+    );
+    if (projectId) updateStatus(opportunityId, "In progress");
   };
 
   const runScan = async () => {
@@ -294,6 +313,8 @@ export default function OpportunityScout({
               const relatedContacts = opportunity.contactIds
                 .map((id) => contacts.find((contact) => contact.id === id))
                 .filter((contact): contact is Contact => Boolean(contact));
+              const linkedProjectId =
+                projects.find((project) => project.opportunityIds.includes(opportunity.id))?.id || "";
               return (
                 <article className="panel scout-opportunity-card" key={opportunity.id}>
                   <div className="scout-card-topline">
@@ -350,6 +371,21 @@ export default function OpportunityScout({
                     </div>
                   )}
                   <div className="scout-card-actions">
+                    {projects.length > 0 && (
+                      <label className={`scout-project-link${linkedProjectId ? " linked" : ""}`}>
+                        <FolderKanban size={14} />
+                        <select
+                          value={linkedProjectId}
+                          onChange={(event) => linkToProject(opportunity.id, event.target.value)}
+                          aria-label={`Project for ${opportunity.title}`}
+                        >
+                          <option value="">Add to project...</option>
+                          {projects
+                            .filter((project) => project.status !== "Complete")
+                            .map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}
+                        </select>
+                      </label>
+                    )}
                     {opportunity.status !== "Saved" && (
                       <button
                         className="button button-secondary"
@@ -364,6 +400,14 @@ export default function OpportunityScout({
                         onClick={() => updateStatus(opportunity.id, "In progress")}
                       >
                         <Target size={14} /> Start working on it
+                      </button>
+                    )}
+                    {opportunity.status !== "New" && (
+                      <button
+                        className="button button-ghost"
+                        onClick={() => updateStatus(opportunity.id, "New")}
+                      >
+                        <RefreshCcw size={14} /> Return to inbox
                       </button>
                     )}
                     <button

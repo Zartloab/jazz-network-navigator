@@ -76,12 +76,14 @@ import {
   ResearchOpportunity,
   TodayTask,
   Temperature,
+  WorkProject,
 } from "@/lib/types";
 import TourBuilder from "@/components/TourBuilder";
 import OpportunityScout from "@/components/OpportunityScout";
 import ArtistProfileEditor from "@/components/ArtistProfileEditor";
 import CreativeStudio from "@/components/CreativeStudio";
 import WorkHub from "@/components/WorkHub";
+import CommandPalette from "@/components/CommandPalette";
 import { emptyArtistProfile } from "@/lib/creative-studio";
 import { buildTodayTasks } from "@/lib/today";
 import {
@@ -94,6 +96,7 @@ const OPPORTUNITY_STORAGE_KEY = "jazz-network-navigator-opportunities-v1";
 const NOTIFICATION_READ_KEY = "jazz-network-navigator-notifications-read-v1";
 const ARTIST_PROFILE_KEY = "jazz-network-navigator-artist-profile-v1";
 const TODAY_COMPLETED_KEY = "jazz-network-navigator-today-completed-v1";
+const PROJECTS_STORAGE_KEY = "jazz-network-navigator-projects-v1";
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
 const temperatureColors: Record<Temperature, string> = {
@@ -201,6 +204,24 @@ function cleanContact(contact: Contact): Contact {
     relationship_score: Number(contact.relationship_score) || 0,
     lat: contact.lat === "" ? "" : Number(contact.lat),
     lng: contact.lng === "" ? "" : Number(contact.lng),
+  };
+}
+
+function cleanProject(project: Partial<WorkProject>): WorkProject {
+  return {
+    id: project.id || `PROJECT-${Date.now()}`,
+    name: project.name || "Untitled project",
+    type: project.type || "Campaign",
+    status: project.status || "Idea",
+    startDate: project.startDate || "",
+    endDate: project.endDate || "",
+    goal: project.goal || "",
+    targetValue: project.targetValue || "",
+    notes: project.notes || "",
+    contactIds: Array.isArray(project.contactIds) ? project.contactIds : [],
+    opportunityIds: Array.isArray(project.opportunityIds) ? project.opportunityIds : [],
+    tasks: Array.isArray(project.tasks) ? project.tasks : [],
+    createdAt: project.createdAt || new Date().toISOString(),
   };
 }
 
@@ -319,6 +340,8 @@ export default function JazzDashboard() {
   const [researchHydrated, setResearchHydrated] = useState(false);
   const [artistProfile, setArtistProfile] = useState<ArtistProfile>(emptyArtistProfile);
   const [completedTodayIds, setCompletedTodayIds] = useState<string[]>([]);
+  const [projects, setProjects] = useState<WorkProject[]>([]);
+  const [commandOpen, setCommandOpen] = useState(false);
 
   useEffect(() => {
     const storedContacts = readLocalJson<Contact[]>(STORAGE_KEY);
@@ -345,6 +368,8 @@ export default function JazzDashboard() {
     if (storedToday) {
       if (storedToday.date === TODAY()) setCompletedTodayIds(storedToday.ids);
     }
+    const storedProjects = readLocalJson<WorkProject[]>(PROJECTS_STORAGE_KEY);
+    if (storedProjects) setProjects(storedProjects.map(cleanProject));
     setResearchHydrated(true);
     setHydrated(true);
   }, []);
@@ -386,6 +411,22 @@ export default function JazzDashboard() {
   }, [completedTodayIds, researchHydrated]);
 
   useEffect(() => {
+    if (!researchHydrated) return;
+    window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+  }, [projects, researchHydrated]);
+
+  useEffect(() => {
+    const openCommand = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((current) => !current);
+      }
+    };
+    window.addEventListener("keydown", openCommand);
+    return () => window.removeEventListener("keydown", openCommand);
+  }, []);
+
+  useEffect(() => {
     if (!researchHydrated || !contacts.length || opportunities.length) return;
     setOpportunities(
       buildLocalOpportunityScan(
@@ -422,13 +463,14 @@ export default function JazzDashboard() {
       "jazz-network-navigator-research-brief-v1",
       "jazz-network-navigator-creative-packs-v1",
       "jazz-network-navigator-tour-plan-v1",
-      "jazz-network-navigator-projects-v1",
+      PROJECTS_STORAGE_KEY,
     ].forEach((key) => window.localStorage.removeItem(key));
     setContacts([]);
     setOpportunities([]);
     setReadNotificationIds([]);
     setArtistProfile(emptyArtistProfile);
     setCompletedTodayIds([]);
+    setProjects([]);
     setSelectedId(null);
     setLocked(true);
   };
@@ -485,6 +527,7 @@ export default function JazzDashboard() {
         <AppTopbar
           view={activeView}
           onOpenMobile={() => setMobileNavOpen(true)}
+          onOpenSearch={() => setCommandOpen(true)}
           onAdd={() => setShowAdd(true)}
           notifications={notifications}
           onMarkAllRead={() =>
@@ -504,6 +547,7 @@ export default function JazzDashboard() {
               <DashboardOverview
                 contacts={contacts}
                 opportunities={opportunities}
+                projects={projects}
                 profile={artistProfile}
                 completedTodayIds={completedTodayIds}
                 onCompleteToday={(id) =>
@@ -521,6 +565,8 @@ export default function JazzDashboard() {
                 contacts={contacts}
                 opportunities={opportunities}
                 profile={artistProfile}
+                projects={projects}
+                onProjectsChange={setProjects}
                 onNavigate={navigate}
               />
             )}
@@ -548,6 +594,8 @@ export default function JazzDashboard() {
                 profile={artistProfile}
                 opportunities={opportunities}
                 onOpportunityChange={setOpportunities}
+                projects={projects}
+                onProjectsChange={setProjects}
                 onSelect={setSelectedId}
                 mapFilter={mapFilter}
                 onMapFilter={setMapFilter}
@@ -582,6 +630,8 @@ export default function JazzDashboard() {
                 opportunities={opportunities}
                 onChange={setOpportunities}
                 onSelectContact={setSelectedId}
+                projects={projects}
+                onProjectsChange={setProjects}
               />
             )}
             {activeView === "studio" && (
@@ -640,6 +690,8 @@ export default function JazzDashboard() {
           onClose={() => setSelectedId(null)}
           onUpdate={updateContact}
           onEmail={() => setEmailContactId(selectedContact.id)}
+          projects={projects}
+          onProjectsChange={setProjects}
         />
       )}
       {showAdd && (
@@ -655,6 +707,15 @@ export default function JazzDashboard() {
       {emailContact && (
         <EmailDraftModal contact={emailContact} profile={artistProfile} onClose={() => setEmailContactId(null)} />
       )}
+      <CommandPalette
+        open={commandOpen}
+        contacts={contacts}
+        opportunities={opportunities}
+        projects={projects}
+        onClose={() => setCommandOpen(false)}
+        onNavigate={navigate}
+        onSelectContact={setSelectedId}
+      />
     </main>
   );
 }
@@ -738,6 +799,7 @@ function AppSidebar({
 function AppTopbar({
   view,
   onOpenMobile,
+  onOpenSearch,
   onAdd,
   notifications,
   onMarkAllRead,
@@ -745,6 +807,7 @@ function AppTopbar({
 }: {
   view: AppView;
   onOpenMobile: () => void;
+  onOpenSearch: () => void;
   onAdd: () => void;
   notifications: AppNotification[];
   onMarkAllRead: () => void;
@@ -764,6 +827,11 @@ function AppTopbar({
         <p>{detail.description}</p>
       </div>
       <div className="topbar-actions">
+        <button className="command-trigger" onClick={onOpenSearch} aria-label="Search workspace">
+          <Search size={16} />
+          <span>Search</span>
+          <kbd>⌘K</kbd>
+        </button>
         <div className="notification-menu">
           <button
             className={`notification-trigger${notificationsOpen ? " active" : ""}`}
@@ -941,6 +1009,8 @@ function DiscoverWorkspace({
   profile,
   opportunities,
   onOpportunityChange,
+  projects,
+  onProjectsChange,
   onSelect,
   mapFilter,
   onMapFilter,
@@ -951,6 +1021,8 @@ function DiscoverWorkspace({
   profile: ArtistProfile;
   opportunities: ResearchOpportunity[];
   onOpportunityChange: (opportunities: ResearchOpportunity[]) => void;
+  projects: WorkProject[];
+  onProjectsChange: React.Dispatch<React.SetStateAction<WorkProject[]>>;
   onSelect: (id: string) => void;
   mapFilter: MapFilter;
   onMapFilter: (filter: MapFilter) => void;
@@ -993,6 +1065,8 @@ function DiscoverWorkspace({
           opportunities={opportunities}
           onChange={onOpportunityChange}
           onSelectContact={onSelect}
+          projects={projects}
+          onProjectsChange={onProjectsChange}
         />
       )}
       {tab === "map" && (
@@ -1051,6 +1125,7 @@ function StudioWorkspace({
 function DashboardOverview({
   contacts,
   opportunities,
+  projects,
   profile,
   completedTodayIds,
   onCompleteToday,
@@ -1062,6 +1137,7 @@ function DashboardOverview({
 }: {
   contacts: Contact[];
   opportunities: ResearchOpportunity[];
+  projects: WorkProject[];
   profile: ArtistProfile;
   completedTodayIds: string[];
   onCompleteToday: (id: string) => void;
@@ -1086,6 +1162,74 @@ function DashboardOverview({
     completedTodayIds,
   );
   const urgentToday = todayTasks.filter((task) => task.priority === "High").length;
+  const activeProjects = projects.filter((project) => project.status !== "Complete");
+  const sevenDaysFromNow = new Date();
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+  const sevenDaysIso = sevenDaysFromNow.toISOString().slice(0, 10);
+  const dueProjectTasks = activeProjects.flatMap((project) =>
+    project.tasks.filter(
+      (task) =>
+        task.status !== "Done" &&
+        task.dueDate &&
+        task.dueDate <= sevenDaysIso,
+    ),
+  );
+  const projectsWithoutNextMove = activeProjects.filter(
+    (project) =>
+      !project.tasks.some((task) => task.status !== "Done") &&
+      !project.opportunityIds.length &&
+      !project.contactIds.length,
+  ).length;
+  const hotWithoutDate = contacts.filter(
+    (contact) =>
+      contact.relationship_temperature === "Hot" &&
+      contact.relationship_stage !== "Unqualified" &&
+      !contact.next_follow_up_date,
+  ).length;
+  const priorityOpportunity = opportunities
+    .filter(
+      (opportunity) =>
+        opportunity.status === "In progress" || opportunity.status === "Saved",
+    )
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "In progress" ? -1 : 1;
+      return b.confidence - a.confidence;
+    })[0];
+  const managerFocus =
+    due.length > 0
+      ? {
+          title: `Clear ${due.length} due ${due.length === 1 ? "follow-up" : "follow-ups"}.`,
+          copy: "These are the easiest relationships to lose through silence. Start with the strongest one.",
+          action: "Open follow-ups",
+          view: "relationships" as AppView,
+        }
+      : dueProjectTasks.length > 0
+        ? {
+            title: `${dueProjectTasks.length} project ${dueProjectTasks.length === 1 ? "task is" : "tasks are"} due soon.`,
+            copy: "Move one practical task forward before opening a new piece of work.",
+            action: "Open projects",
+            view: "work" as AppView,
+          }
+        : priorityOpportunity
+          ? {
+              title: `Move “${priorityOpportunity.title}” forward.`,
+              copy: priorityOpportunity.nextAction || "Choose one clear next action and record the outcome.",
+              action: "Open opportunity",
+              view: "discover" as AppView,
+            }
+          : activeProjects.length > 0
+            ? {
+                title: `Choose the next move for ${activeProjects[0].name}.`,
+                copy: "Add one small task, one useful contact, or one opportunity to make the project actionable.",
+                action: "Open projects",
+                view: "work" as AppView,
+              }
+            : {
+                title: "Start the project that matters most.",
+                copy: "A project gives your contacts, opportunities, tasks, and creative work a shared purpose.",
+                action: "Create a project",
+                view: "work" as AppView,
+              };
 
   const quickActions = [
     { title: "Open projects", copy: "Run a tour, release, campaign, or collaboration.", icon: FolderKanban, view: "work" as AppView },
@@ -1111,6 +1255,23 @@ function DashboardOverview({
         <article><span className="overview-stat-icon active"><Target size={18} /></span><div><strong>{active}</strong><small>Active opportunities</small></div><HelpTip text="Contacts that have moved beyond the unqualified stage." /></article>
         <article><span className="overview-stat-icon cities"><Globe2 size={18} /></span><div><strong>{cityCount}</strong><small>Cities covered</small></div><HelpTip text="Unique cities represented in your contact network." /></article>
       </div>
+
+      <article className="panel manager-brief">
+        <span className="manager-brief-icon"><Sparkles size={20} /></span>
+        <div className="manager-brief-copy">
+          <span className="eyebrow">Manager briefing</span>
+          <h3>{managerFocus.title}</h3>
+          <p>{managerFocus.copy}</p>
+        </div>
+        <div className="manager-signals">
+          <span className={dueProjectTasks.length ? "attention" : ""}><CalendarClock size={13} /><b>{dueProjectTasks.length}</b> project tasks due soon</span>
+          <span className={projectsWithoutNextMove ? "attention" : ""}><FolderKanban size={13} /><b>{projectsWithoutNextMove}</b> projects without a next move</span>
+          <span className={hotWithoutDate ? "attention" : ""}><Flame size={13} /><b>{hotWithoutDate}</b> hot contacts without a date</span>
+        </div>
+        <button className="button button-secondary" onClick={() => onNavigate(managerFocus.view)}>
+          {managerFocus.action} <ArrowRight size={13} />
+        </button>
+      </article>
 
       <div className="overview-grid">
         <article className="panel start-card">
@@ -1177,16 +1338,6 @@ function DashboardOverview({
         </article>
       </div>
 
-      <article className="panel workflow-explainer">
-        <div><span className="eyebrow">How the app works</span><h3>A simple rhythm for managing relationships.</h3></div>
-        <div className="workflow-steps">
-          <span><b>1</b><strong>Choose a goal</strong><small>Plan a tour or decide who needs attention.</small></span>
-          <ArrowRight size={17} />
-          <span><b>2</b><strong>Review a draft</strong><small>AI helps write it. You stay in control.</small></span>
-          <ArrowRight size={17} />
-          <span><b>3</b><strong>Record the outcome</strong><small>Update the stage and follow-up date.</small></span>
-        </div>
-      </article>
     </section>
   );
 }
@@ -2153,13 +2304,19 @@ function ContactDrawer({
   onClose,
   onUpdate,
   onEmail,
+  projects,
+  onProjectsChange,
 }: {
   contact: Contact;
   onClose: () => void;
   onUpdate: (contact: Contact) => void;
   onEmail: () => void;
+  projects: WorkProject[];
+  onProjectsChange: React.Dispatch<React.SetStateAction<WorkProject[]>>;
 }) {
   const [draft, setDraft] = useState(contact);
+  const linkedProjectId =
+    projects.find((project) => project.contactIds.includes(contact.id))?.id || "";
 
   useEffect(() => setDraft(contact), [contact]);
 
@@ -2178,6 +2335,18 @@ function ContactDrawer({
     const enriched = simulateMakeEnrichment(draft);
     setDraft(enriched);
     onUpdate(enriched);
+  };
+
+  const linkContact = (projectId: string) => {
+    onProjectsChange((current) =>
+      current.map((project) => ({
+        ...project,
+        contactIds:
+          project.id === projectId
+            ? [...new Set([...project.contactIds, contact.id])]
+            : project.contactIds.filter((id) => id !== contact.id),
+      })),
+    );
   };
 
   return (
@@ -2204,6 +2373,17 @@ function ContactDrawer({
           <button className="button button-primary" onClick={onEmail}><Mail size={15} /> Generate email</button>
           <button className="button button-secondary" onClick={enrich}><WandSparkles size={15} /> Simulate Make enrichment</button>
         </div>
+        {projects.length > 0 && (
+          <label className={`drawer-project-link${linkedProjectId ? " linked" : ""}`}>
+            <span><FolderKanban size={15} /><strong>Project</strong></span>
+            <select value={linkedProjectId} onChange={(event) => linkContact(event.target.value)} aria-label={`Project for ${contactLabel(contact)}`}>
+              <option value="">Not linked to a project</option>
+              {projects
+                .filter((project) => project.status !== "Complete")
+                .map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}
+            </select>
+          </label>
+        )}
         <div className="drawer-body">
           <div className="insight-card">
             <span><Sparkles size={14} /> AI summary</span>

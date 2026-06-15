@@ -138,6 +138,16 @@ export type WorkProjectType =
 
 export type WorkProjectStatus = "Idea" | "Planning" | "Active" | "Complete";
 
+export type WorkTaskStatus = "To do" | "Doing" | "Done";
+
+export type WorkTask = {
+  id: string;
+  title: string;
+  status: WorkTaskStatus;
+  dueDate: string;
+  createdAt: string;
+};
+
 export type WorkProject = {
   id: string;
   name: string;
@@ -148,6 +158,9 @@ export type WorkProject = {
   goal: string;
   targetValue: string;
   notes: string;
+  contactIds: string[];
+  opportunityIds: string[];
+  tasks: WorkTask[];
   createdAt: string;
 };
 

@@ -2,10 +2,10 @@
 
 A polished local-first relationship intelligence dashboard for musicians, managers, and booking teams.
 
-The interface uses a focused sidebar workspace: Home shows today’s priorities,
-while Tour Builder, Follow-ups, Contacts, Pipeline, Network Map, and Ask AI each
-open as a separate task area. Hover or focus the help icons for plain-language
-guidance.
+The interface is organised around five familiar jobs: **Today**, **Projects**,
+**Relationships**, **Opportunities**, and **Studio**. Related tools live inside
+those workspaces as simple tabs, so users see one task at a time. Hover or focus
+the help icons for plain-language guidance.
 
 ## Features
 
@@ -22,6 +22,11 @@ guidance.
 - Reusable Artist Profile for consistent pitches, drafts, links, and tour details
 - Creative Studio for booking, festival, press, release, and collaboration pitch packs
 - Daily Brief that combines follow-ups, active opportunities, relationship gaps, and profile setup
+- Manager Briefing that recommends one focus and flags project or relationship risks
+- Project portfolio for tours, releases, campaigns, and collaborations
+- Project task desks with due dates, progress, linked contacts, and linked opportunities
+- Combined project calendar for tasks, project dates, follow-ups, and opportunity deadlines
+- Universal workspace search for navigation, projects, contacts, and opportunities with `Cmd/Ctrl + K`
 - Data Readiness dashboard with contactability metrics and a prioritised enrichment queue
 - In-app notifications for due follow-ups, strong opportunities, and relationships missing a next date
 - Make.com automation blueprint and enrichment simulation
@@ -32,7 +37,7 @@ The detailed process for cleaning, verifying, enriching, reviewing, and safely
 activating contact records is documented in
 [Contact enrichment process](docs/contact-enrichment-process.md).
 
-Open **Settings & Export** to see **Contact Data Readiness**. It measures
+Open **Settings** to see **Contact Data Readiness**. It measures
 verified email-route coverage, location coverage, clear next actions, and
 follow-up scheduling for active relationships. The queue recommends the
 highest-value missing detail to fix for up to six contacts and opens the
@@ -84,7 +89,7 @@ send the relevant contact context to the configured OpenAI API account.
 
 ## AI Tour Builder
 
-Open **Tour Builder** from the sidebar.
+Open **Projects**, then choose **Plan a tour**.
 
 1. Add a tour name, target cities or countries, dates, style, goal, fee, weekly
    outreach limit, and any useful context.
@@ -152,8 +157,8 @@ than sending automatically, preserving the approval step used in this prototype.
 
 ## Opportunity Scout
 
-Open **Opportunity Scout** from the sidebar and describe the locations, genre,
-goals, and context that matter.
+Open **Opportunities** and use the **Scout** tab to describe the locations,
+genre, goals, and context that matter.
 
 Scout always starts with the saved contact network. It looks for:
 
@@ -171,6 +176,8 @@ Opportunity decisions are stored locally:
 
 - **Save** keeps an opportunity for later
 - **Start working on it** marks it active
+- **Add to project** connects it to a tour, release, campaign, or collaboration
+- **Return to inbox** moves saved or active work back to the new-opportunity list
 - **Not for me** removes it from the working inbox
 
 The notification bell surfaces a small action list rather than a general
@@ -179,7 +186,7 @@ opportunities, and strong relationships without a scheduled next date.
 
 ## Daily Brief
 
-Home turns the product’s existing signals into a short daily plan. It can
+Today turns the product’s existing signals into a short daily plan. It can
 include due follow-ups, saved and active opportunities, strong relationships
 without a next date, and incomplete artist-profile setup.
 
@@ -187,9 +194,38 @@ The brief is capped at six actions and prioritises important work first. Each
 item has one primary action. **Done for today** hides it until the next day, and
 **Restore hidden** reverses accidental dismissals.
 
+The **Manager Briefing** above the daily list recommends one focus based on due
+follow-ups, project tasks, active opportunities, and projects without a next
+move. Its signals are factual counts from the local workspace.
+
+## Projects and connected work
+
+Projects provide the shared context for the rest of the app. Create a **Tour**,
+**Release**, **Campaign**, or **Collaboration**, then:
+
+1. add practical tasks and optional due dates
+2. mark tasks as To do, Doing, or Done
+3. add an opportunity to the project from Scout
+4. add a contact from the contact profile drawer
+5. review every linked person, opportunity, and task from the project desk
+6. use Calendar for one list of project dates, task deadlines, follow-ups, and
+   opportunity deadlines
+
+Project information is stored in the browser with the rest of the local
+workspace. Deleting a project removes only the project record; it does not
+delete contacts or opportunities.
+
+## Universal search
+
+Select **Search** in the top bar or press `Cmd + K` on macOS and `Ctrl + K` on
+Windows or Linux. Search accepts a person, company, city, project, opportunity,
+or workspace name. Opening a contact from search also opens the complete contact
+profile.
+
 ## Artist Profile and Creative Studio
 
-Open **Settings** to create the reusable Artist Profile. Store the facts that
+Open **Studio**, then choose **Artist profile** to create the reusable profile.
+Store the facts that
 should stay consistent across the app: artist and project names, base city,
 genres, biography, current project, goals, useful links, fee guidance, and email
 signature.
@@ -197,7 +233,7 @@ signature.
 Tour Builder, email drafting, Opportunity Scout, and Creative Studio reuse this
 profile instead of asking for the same information each time.
 
-Open **Creative Studio** to create an editable pack for:
+Use the **Create** tab in Studio to create an editable pack for:
 
 - booking pitches
 - festival applications
