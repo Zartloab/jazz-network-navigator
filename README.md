@@ -14,6 +14,7 @@ the help icons for plain-language guidance.
 - Opportunity-stage kanban
 - Searchable and editable contact directory
 - LocalStorage persistence, reset, add-contact, and JSON/CSV export
+- Full workspace backup and restore for local projects, commercial data, relationship history, and drafts
 - Local network question answering without an API key
 - Email draft generation with local templates
 - Optional OpenAI-powered network answers and email drafts
@@ -227,6 +228,18 @@ project still needs to earn. Cost and payment states are also manual.
 Project information is stored in the browser with the rest of the local
 workspace. Deleting a project removes only the project record; it does not
 delete contacts or opportunities.
+
+## Workspace backup
+
+Open **Settings**, then **Backups & automation**. **Full backup** downloads one
+JSON file containing contacts, projects, tasks, bookings, costs, opportunities,
+artist profile, relationship activity, Tour Builder state, research brief, and
+Creative Studio drafts. Contact-only JSON and CSV exports remain available.
+
+Use **Restore backup** to select a previously exported workspace file. The app
+validates the file and asks for confirmation before replacing anything in the
+current browser. A full backup contains decrypted contact and relationship
+information, so it should be stored and shared as a private file.
 
 ## Relationship activity
 

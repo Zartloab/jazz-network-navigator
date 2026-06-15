@@ -5959,7 +5959,30 @@ footer {
 
 .settings-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.workspace-import-button {
+  cursor: pointer;
+}
+
+.workspace-import-input {
+  display: none;
+}
+
+.secondary-exports {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 11px;
+}
+
+.secondary-exports .text-button {
+  font-size: 8px;
+}
+
+.settings-card .form-error {
+  margin-top: 12px;
 }
 
 .settings-workspace .automation-section {

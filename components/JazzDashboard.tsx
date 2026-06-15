@@ -39,6 +39,7 @@ import {
   Sparkles,
   Target,
   Trash2,
+  Upload,
   Users,
   WandSparkles,
   X,
@@ -608,6 +609,94 @@ export default function JazzDashboard() {
     downloadFile("jazz-network-contacts.json", JSON.stringify(contacts, null, 2), "application/json");
   const exportCsv = () =>
     downloadFile("jazz-network-contacts.csv", contactsToCsv(contacts), "text/csv;charset=utf-8");
+  const exportWorkspace = () =>
+    downloadFile(
+      `jazz-network-workspace-${TODAY()}.json`,
+      JSON.stringify(
+        {
+          kind: "jazz-network-workspace",
+          schemaVersion: 1,
+          exportedAt: new Date().toISOString(),
+          contacts,
+          opportunities,
+          artistProfile,
+          projects,
+          contactActivities,
+          readNotificationIds,
+          completedToday: { date: TODAY(), ids: completedTodayIds },
+          modules: {
+            researchBrief: readLocalJson<unknown>("jazz-network-navigator-research-brief-v1"),
+            creativePacks: readLocalJson<unknown>("jazz-network-navigator-creative-packs-v1"),
+            tourPlan: readLocalJson<unknown>("jazz-network-navigator-tour-plan-v1"),
+          },
+        },
+        null,
+        2,
+      ),
+      "application/json",
+    );
+
+  const importWorkspace = async (file: File) => {
+    const parsed = JSON.parse(await file.text()) as {
+      kind?: string;
+      contacts?: Contact[];
+      opportunities?: ResearchOpportunity[];
+      artistProfile?: ArtistProfile;
+      projects?: WorkProject[];
+      contactActivities?: ContactActivity[];
+      readNotificationIds?: string[];
+      completedToday?: { date?: string; ids?: string[] };
+      modules?: {
+        researchBrief?: unknown;
+        creativePacks?: unknown;
+        tourPlan?: unknown;
+      };
+    };
+    if (parsed.kind !== "jazz-network-workspace" || !Array.isArray(parsed.contacts)) {
+      throw new Error("This is not a Jazz Network workspace backup.");
+    }
+    if (!window.confirm("Replace this browser’s current workspace with the selected backup?")) {
+      return;
+    }
+
+    const writeOrRemove = (key: string, value: unknown) => {
+      if (value === undefined || value === null) window.localStorage.removeItem(key);
+      else window.localStorage.setItem(key, JSON.stringify(value));
+    };
+
+    writeOrRemove(STORAGE_KEY, parsed.contacts.map(cleanContact));
+    writeOrRemove(OPPORTUNITY_STORAGE_KEY, Array.isArray(parsed.opportunities) ? parsed.opportunities : []);
+    writeOrRemove(ARTIST_PROFILE_KEY, { ...emptyArtistProfile, ...(parsed.artistProfile || {}) });
+    writeOrRemove(
+      PROJECTS_STORAGE_KEY,
+      Array.isArray(parsed.projects) ? parsed.projects.map(cleanProject) : [],
+    );
+    writeOrRemove(
+      CONTACT_ACTIVITY_STORAGE_KEY,
+      Array.isArray(parsed.contactActivities) ? parsed.contactActivities : [],
+    );
+    writeOrRemove(
+      NOTIFICATION_READ_KEY,
+      Array.isArray(parsed.readNotificationIds) ? parsed.readNotificationIds : [],
+    );
+    writeOrRemove(TODAY_COMPLETED_KEY, {
+      date: parsed.completedToday?.date || TODAY(),
+      ids: Array.isArray(parsed.completedToday?.ids) ? parsed.completedToday.ids : [],
+    });
+    writeOrRemove(
+      "jazz-network-navigator-research-brief-v1",
+      parsed.modules?.researchBrief,
+    );
+    writeOrRemove(
+      "jazz-network-navigator-creative-packs-v1",
+      parsed.modules?.creativePacks,
+    );
+    writeOrRemove(
+      "jazz-network-navigator-tour-plan-v1",
+      parsed.modules?.tourPlan,
+    );
+    window.location.reload();
+  };
   const navigate = (view: AppView) => {
     setActiveView(view);
     setMobileNavOpen(false);
@@ -805,6 +894,8 @@ export default function JazzDashboard() {
                 contacts={contacts}
                 onSelectContact={setSelectedId}
                 onReset={resetData}
+                onExportWorkspace={exportWorkspace}
+                onImportWorkspace={importWorkspace}
                 onExportJson={exportJson}
                 onExportCsv={exportCsv}
               />
@@ -1518,16 +1609,21 @@ function SettingsWorkspace({
   contacts,
   onSelectContact,
   onReset,
+  onExportWorkspace,
+  onImportWorkspace,
   onExportJson,
   onExportCsv,
 }: {
   contacts: Contact[];
   onSelectContact: (id: string) => void;
   onReset: () => void;
+  onExportWorkspace: () => void;
+  onImportWorkspace: (file: File) => Promise<void>;
   onExportJson: () => void;
   onExportCsv: () => void;
 }) {
   const [tab, setTab] = useState<"quality" | "data">("quality");
+  const [importError, setImportError] = useState("");
   return (
     <section className="settings-workspace">
       <div className="hub-tabs" role="tablist" aria-label="Settings">
@@ -1549,12 +1645,47 @@ function SettingsWorkspace({
           <div className="settings-grid">
             <article className="panel settings-card">
               <span className="icon-box"><Download size={18} /></span>
-              <h2>Back up your contacts</h2>
-              <p>Download your current contact data before making major changes.</p>
+              <h2>Back up your workspace</h2>
+              <p>Save contacts, projects, bookings, costs, opportunities, profile, relationship history, and local drafts in one file. Treat the downloaded file as private.</p>
               <div className="settings-actions">
-                <button className="button button-secondary" onClick={onExportJson}><FileJson size={15} /> Export JSON</button>
-                <button className="button button-ghost" onClick={onExportCsv}><Download size={15} /> Export CSV</button>
+                <button className="button button-secondary" onClick={onExportWorkspace}><FileJson size={15} /> Full backup</button>
+                <label
+                  className="button button-ghost workspace-import-button"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.currentTarget.querySelector("input")?.click();
+                    }
+                  }}
+                >
+                  <Upload size={15} /> Restore backup
+                  <input
+                    className="workspace-import-input"
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (!file) return;
+                      setImportError("");
+                      try {
+                        await onImportWorkspace(file);
+                      } catch (error) {
+                        setImportError(
+                          error instanceof Error ? error.message : "The backup could not be restored.",
+                        );
+                      }
+                    }}
+                  />
+                </label>
               </div>
+              <div className="settings-actions secondary-exports">
+                <button className="text-button" onClick={onExportJson}>Contacts JSON</button>
+                <button className="text-button" onClick={onExportCsv}>Contacts CSV</button>
+              </div>
+              {importError && <div className="form-error">{importError}</div>}
             </article>
             <article className="panel settings-card caution">
               <span className="icon-box"><RefreshCcw size={18} /></span>
