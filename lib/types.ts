@@ -34,6 +34,22 @@ export type Contact = {
   ai_summary: string;
 };
 
+export type ContactActivityKind =
+  | "note"
+  | "relationship"
+  | "follow-up"
+  | "project"
+  | "enrichment";
+
+export type ContactActivity = {
+  id: string;
+  contactId: string;
+  kind: ContactActivityKind;
+  title: string;
+  detail: string;
+  createdAt: string;
+};
+
 export type EmailIntent =
   | "Follow up after meeting"
   | "Send music / EPK"
@@ -148,6 +164,48 @@ export type WorkTask = {
   createdAt: string;
 };
 
+export type DealStatus =
+  | "Lead"
+  | "Offered"
+  | "Negotiating"
+  | "Confirmed"
+  | "Paid"
+  | "Lost";
+
+export type WorkDeal = {
+  id: string;
+  title: string;
+  contactId: string;
+  amount: string;
+  currency: string;
+  status: DealStatus;
+  eventDate: string;
+  notes: string;
+  createdAt: string;
+};
+
+export type ExpenseStatus = "Planned" | "Committed" | "Paid";
+
+export type ExpenseCategory =
+  | "Travel"
+  | "Accommodation"
+  | "Production"
+  | "Musicians"
+  | "Marketing"
+  | "Other";
+
+export type WorkExpense = {
+  id: string;
+  title: string;
+  category: ExpenseCategory;
+  amount: string;
+  currency: string;
+  status: ExpenseStatus;
+  dueDate: string;
+  notes: string;
+  createdAt: string;
+};
+
 export type WorkProject = {
   id: string;
   name: string;
@@ -161,6 +219,8 @@ export type WorkProject = {
   contactIds: string[];
   opportunityIds: string[];
   tasks: WorkTask[];
+  deals: WorkDeal[];
+  expenses: WorkExpense[];
   createdAt: string;
 };
 

@@ -25,6 +25,9 @@ the help icons for plain-language guidance.
 - Manager Briefing that recommends one focus and flags project or relationship risks
 - Project portfolio for tours, releases, campaigns, and collaborations
 - Project task desks with due dates, progress, linked contacts, and linked opportunities
+- Booking and deal ledger with offer, negotiation, confirmation, payment, and lost statuses
+- Project budget and break-even forecast for planned, committed, and paid costs
+- Contact activity history for relationship changes, follow-ups, project links, enrichment, and notes
 - Combined project calendar for tasks, project dates, follow-ups, and opportunity deadlines
 - Universal workspace search for navigation, projects, contacts, and opportunities with `Cmd/Ctrl + K`
 - Data Readiness dashboard with contactability metrics and a prioritised enrichment queue
@@ -210,10 +213,31 @@ Projects provide the shared context for the rest of the app. Create a **Tour**,
 5. review every linked person, opportunity, and task from the project desk
 6. use Calendar for one list of project dates, task deadlines, follow-ups, and
    opportunity deadlines
+7. use Outcomes to record commercial conversations as leads, offers,
+   negotiations, confirmed bookings, payments, or lost work
+8. add travel, accommodation, production, musician, marketing, and other costs
+   to see a currency-safe break-even forecast
+
+Confirmed and paid value is summarised by currency, so different currencies are
+never added into a misleading single total. Payment and confirmation statuses
+are always entered manually; the app does not infer that money was received.
+Planned costs are included in the forecast balance so users can see what a
+project still needs to earn. Cost and payment states are also manual.
 
 Project information is stored in the browser with the rest of the local
 workspace. Deleting a project removes only the project record; it does not
 delete contacts or opportunities.
+
+## Relationship activity
+
+Open any contact and choose **Activity**. The timeline records meaningful CRM
+changes such as relationship stage, warmth, priority, follow-up dates, project
+links, and enrichment updates. Users can also add a plain-language note without
+editing the original imported notes.
+
+Activity is stored locally in the browser. Generated drafts and copied emails
+are not logged as sent communication, and the timeline never claims that an
+email was delivered.
 
 ## Universal search
 

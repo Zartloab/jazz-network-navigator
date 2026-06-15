@@ -38,6 +38,7 @@ import {
   Settings,
   Sparkles,
   Target,
+  Trash2,
   Users,
   WandSparkles,
   X,
@@ -70,6 +71,8 @@ import {
   AppView,
   ArtistProfile,
   Contact,
+  ContactActivity,
+  ContactActivityKind,
   EmailDraft,
   EmailIntent,
   Priority,
@@ -97,6 +100,7 @@ const NOTIFICATION_READ_KEY = "jazz-network-navigator-notifications-read-v1";
 const ARTIST_PROFILE_KEY = "jazz-network-navigator-artist-profile-v1";
 const TODAY_COMPLETED_KEY = "jazz-network-navigator-today-completed-v1";
 const PROJECTS_STORAGE_KEY = "jazz-network-navigator-projects-v1";
+const CONTACT_ACTIVITY_STORAGE_KEY = "jazz-network-navigator-contact-activity-v1";
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
 const temperatureColors: Record<Temperature, string> = {
@@ -221,6 +225,8 @@ function cleanProject(project: Partial<WorkProject>): WorkProject {
     contactIds: Array.isArray(project.contactIds) ? project.contactIds : [],
     opportunityIds: Array.isArray(project.opportunityIds) ? project.opportunityIds : [],
     tasks: Array.isArray(project.tasks) ? project.tasks : [],
+    deals: Array.isArray(project.deals) ? project.deals : [],
+    expenses: Array.isArray(project.expenses) ? project.expenses : [],
     createdAt: project.createdAt || new Date().toISOString(),
   };
 }
@@ -258,6 +264,19 @@ function formatDate(date: string): string {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(
     new Date(`${date}T00:00:00`),
   );
+}
+
+function formatActivityDate(date: string): string {
+  if (!date) return "Previously recorded";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsed);
 }
 
 function isDue(date: string): boolean {
@@ -341,6 +360,7 @@ export default function JazzDashboard() {
   const [artistProfile, setArtistProfile] = useState<ArtistProfile>(emptyArtistProfile);
   const [completedTodayIds, setCompletedTodayIds] = useState<string[]>([]);
   const [projects, setProjects] = useState<WorkProject[]>([]);
+  const [contactActivities, setContactActivities] = useState<ContactActivity[]>([]);
   const [commandOpen, setCommandOpen] = useState(false);
 
   useEffect(() => {
@@ -370,6 +390,8 @@ export default function JazzDashboard() {
     }
     const storedProjects = readLocalJson<WorkProject[]>(PROJECTS_STORAGE_KEY);
     if (storedProjects) setProjects(storedProjects.map(cleanProject));
+    const storedActivities = readLocalJson<ContactActivity[]>(CONTACT_ACTIVITY_STORAGE_KEY);
+    if (storedActivities) setContactActivities(storedActivities);
     setResearchHydrated(true);
     setHydrated(true);
   }, []);
@@ -416,6 +438,14 @@ export default function JazzDashboard() {
   }, [projects, researchHydrated]);
 
   useEffect(() => {
+    if (!researchHydrated) return;
+    window.localStorage.setItem(
+      CONTACT_ACTIVITY_STORAGE_KEY,
+      JSON.stringify(contactActivities),
+    );
+  }, [contactActivities, researchHydrated]);
+
+  useEffect(() => {
     const openCommand = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -448,8 +478,103 @@ export default function JazzDashboard() {
     [contacts, opportunities, readNotificationIds],
   );
 
+  const addContactActivity = (
+    contactId: string,
+    kind: ContactActivityKind,
+    title: string,
+    detail: string,
+  ) => {
+    if (!detail.trim()) return;
+    setContactActivities((current) => [
+      {
+        id: `ACTIVITY-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        contactId,
+        kind,
+        title,
+        detail: detail.trim(),
+        createdAt: new Date().toISOString(),
+      },
+      ...current,
+    ]);
+  };
+
+  const removeContactActivity = (activityId: string) => {
+    setContactActivities((current) =>
+      current.filter((activity) => activity.id !== activityId || activity.kind !== "note"),
+    );
+  };
+
   const updateContact = (updated: Contact) => {
+    const previous = contacts.find((contact) => contact.id === updated.id);
     setContacts((current) => current.map((contact) => (contact.id === updated.id ? updated : contact)));
+    if (!previous) return;
+
+    const changes: string[] = [];
+    let kind: ContactActivityKind = "relationship";
+    let title = "Contact updated";
+
+    if (previous.relationship_stage !== updated.relationship_stage) {
+      changes.push(`Stage changed from ${previous.relationship_stage || "not set"} to ${updated.relationship_stage || "not set"}`);
+      title = "Relationship stage changed";
+    }
+    if (previous.relationship_temperature !== updated.relationship_temperature) {
+      changes.push(`Warmth changed from ${previous.relationship_temperature} to ${updated.relationship_temperature}`);
+    }
+    if (previous.priority !== updated.priority) {
+      changes.push(`Priority changed from ${previous.priority} to ${updated.priority}`);
+    }
+    if (previous.next_follow_up_date !== updated.next_follow_up_date) {
+      changes.push(
+        updated.next_follow_up_date
+          ? `Next follow-up set for ${formatDate(updated.next_follow_up_date)}`
+          : "Next follow-up removed",
+      );
+      kind = "follow-up";
+      title = "Follow-up plan updated";
+    }
+    if (previous.last_contact_date !== updated.last_contact_date) {
+      changes.push(
+        updated.last_contact_date
+          ? `Contact recorded on ${formatDate(updated.last_contact_date)}`
+          : "Last contact date removed",
+      );
+      kind = "follow-up";
+      title = "Follow-up recorded";
+    }
+    if (
+      previous.latest_interaction !== updated.latest_interaction &&
+      updated.latest_interaction.trim()
+    ) {
+      changes.push(updated.latest_interaction.trim());
+    }
+
+    const detailFields: (keyof Contact)[] = [
+      "full_name",
+      "company",
+      "position",
+      "email",
+      "city",
+      "country",
+      "category",
+      "opportunity_summary",
+      "recommended_next_action",
+      "notes",
+      "introduced_by",
+      "connected_to",
+      "tags",
+    ];
+    if (detailFields.some((field) => previous[field] !== updated[field])) {
+      changes.push("Contact details updated");
+    }
+    if (previous.ai_summary !== updated.ai_summary) {
+      changes.push("Relationship summary refreshed");
+      kind = "enrichment";
+      title = "Contact enrichment updated";
+    }
+
+    if (changes.length) {
+      addContactActivity(updated.id, kind, title, [...new Set(changes)].join(" · "));
+    }
   };
 
   const resetData = () => {
@@ -464,6 +589,7 @@ export default function JazzDashboard() {
       "jazz-network-navigator-creative-packs-v1",
       "jazz-network-navigator-tour-plan-v1",
       PROJECTS_STORAGE_KEY,
+      CONTACT_ACTIVITY_STORAGE_KEY,
     ].forEach((key) => window.localStorage.removeItem(key));
     setContacts([]);
     setOpportunities([]);
@@ -471,6 +597,7 @@ export default function JazzDashboard() {
     setArtistProfile(emptyArtistProfile);
     setCompletedTodayIds([]);
     setProjects([]);
+    setContactActivities([]);
     setSelectedId(null);
     setLocked(true);
   };
@@ -692,6 +819,9 @@ export default function JazzDashboard() {
           onEmail={() => setEmailContactId(selectedContact.id)}
           projects={projects}
           onProjectsChange={setProjects}
+          activities={contactActivities.filter((activity) => activity.contactId === selectedContact.id)}
+          onAddActivity={addContactActivity}
+          onRemoveActivity={removeContactActivity}
         />
       )}
       {showAdd && (
@@ -699,6 +829,12 @@ export default function JazzDashboard() {
           onClose={() => setShowAdd(false)}
           onAdd={(contact) => {
             setContacts((current) => [contact, ...current]);
+            addContactActivity(
+              contact.id,
+              "relationship",
+              "Contact added",
+              "Added to the relationship workspace.",
+            );
             setShowAdd(false);
             setSelectedId(contact.id);
           }}
@@ -2306,6 +2442,9 @@ function ContactDrawer({
   onEmail,
   projects,
   onProjectsChange,
+  activities,
+  onAddActivity,
+  onRemoveActivity,
 }: {
   contact: Contact;
   onClose: () => void;
@@ -2313,12 +2452,26 @@ function ContactDrawer({
   onEmail: () => void;
   projects: WorkProject[];
   onProjectsChange: React.Dispatch<React.SetStateAction<WorkProject[]>>;
+  activities: ContactActivity[];
+  onAddActivity: (
+    contactId: string,
+    kind: ContactActivityKind,
+    title: string,
+    detail: string,
+  ) => void;
+  onRemoveActivity: (activityId: string) => void;
 }) {
   const [draft, setDraft] = useState(contact);
+  const [drawerTab, setDrawerTab] = useState<"profile" | "activity">("profile");
+  const [activityNote, setActivityNote] = useState("");
   const linkedProjectId =
     projects.find((project) => project.contactIds.includes(contact.id))?.id || "";
 
-  useEffect(() => setDraft(contact), [contact]);
+  useEffect(() => {
+    setDraft(contact);
+    setDrawerTab("profile");
+    setActivityNote("");
+  }, [contact]);
 
   const save = () => {
     const names = draft.full_name.trim().split(/\s+/);
@@ -2338,6 +2491,8 @@ function ContactDrawer({
   };
 
   const linkContact = (projectId: string) => {
+    const previousProject = projects.find((project) => project.id === linkedProjectId);
+    const nextProject = projects.find((project) => project.id === projectId);
     onProjectsChange((current) =>
       current.map((project) => ({
         ...project,
@@ -2347,7 +2502,48 @@ function ContactDrawer({
             : project.contactIds.filter((id) => id !== contact.id),
       })),
     );
+    if (projectId && nextProject?.id !== previousProject?.id) {
+      onAddActivity(
+        contact.id,
+        "project",
+        "Linked to project",
+        `${contactLabel(contact)} was linked to ${nextProject?.name}.`,
+      );
+    } else if (!projectId && previousProject) {
+      onAddActivity(
+        contact.id,
+        "project",
+        "Removed from project",
+        `${contactLabel(contact)} was removed from ${previousProject.name}.`,
+      );
+    }
   };
+
+  const addNote = () => {
+    if (!activityNote.trim()) return;
+    onAddActivity(contact.id, "note", "Note added", activityNote);
+    setActivityNote("");
+  };
+
+  const latestInteraction = contact.latest_interaction.trim();
+  const latestAlreadyRecorded = activities.some((activity) =>
+    activity.detail.includes(latestInteraction),
+  );
+  const legacyActivity: ContactActivity | null = latestInteraction && !latestAlreadyRecorded
+    ? {
+        id: `LEGACY-${contact.id}`,
+        contactId: contact.id,
+        kind: "relationship",
+        title: "Latest known interaction",
+        detail: latestInteraction,
+        createdAt: contact.last_contact_date
+          ? new Date(`${contact.last_contact_date}T12:00:00`).toISOString()
+          : "",
+      }
+    : null;
+  const activityItems = [...activities, ...(legacyActivity ? [legacyActivity] : [])].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
 
   return (
     <div className="modal-layer" onMouseDown={onClose}>
@@ -2384,35 +2580,106 @@ function ContactDrawer({
             </select>
           </label>
         )}
-        <div className="drawer-body">
-          <div className="insight-card">
-            <span><Sparkles size={14} /> AI summary</span>
-            <p>{draft.ai_summary || "No summary yet. Run enrichment to create one."}</p>
-          </div>
-          <div className="form-grid two-col">
-            <Field label="Full name" value={draft.full_name} onChange={(value) => setDraft({ ...draft, full_name: value })} />
-            <Field label="Company" value={draft.company} onChange={(value) => setDraft({ ...draft, company: value })} />
-            <Field label="Position" value={draft.position} onChange={(value) => setDraft({ ...draft, position: value })} />
-            <Field label="Email" value={draft.email} type="email" onChange={(value) => setDraft({ ...draft, email: value })} />
-            <Field label="City" value={draft.city} onChange={(value) => setDraft({ ...draft, city: value })} />
-            <Field label="Country" value={draft.country} onChange={(value) => setDraft({ ...draft, country: value })} />
-            <SelectField label="Category" value={draft.category} options={["Booking Agent", "Promoter/Programmer", "Venue", "Journalist / Media", "Record Label", "Publisher", "Other", "Unknown"]} onChange={(value) => setDraft({ ...draft, category: value })} />
-            <SelectField label="Stage" value={draft.relationship_stage} options={opportunityStages} onChange={(value) => setDraft({ ...draft, relationship_stage: value })} />
-            <SelectField label="Temperature" value={draft.relationship_temperature} options={["Hot", "Warm", "Cooling", "Cold"]} onChange={(value) => setDraft({ ...draft, relationship_temperature: value as Temperature })} />
-            <SelectField label="Priority" value={draft.priority} options={["High", "Medium", "Low"]} onChange={(value) => setDraft({ ...draft, priority: value as Priority })} />
-            <Field label="Relationship score" value={String(draft.relationship_score)} type="number" onChange={(value) => setDraft({ ...draft, relationship_score: Math.min(100, Math.max(0, Number(value))) })} />
-            <Field label="Next follow-up" value={draft.next_follow_up_date} type="date" onChange={(value) => setDraft({ ...draft, next_follow_up_date: value })} />
-          </div>
-          <Field label="Opportunity summary" value={draft.opportunity_summary} onChange={(value) => setDraft({ ...draft, opportunity_summary: value })} />
-          <TextArea label="Recommended next action" value={draft.recommended_next_action} onChange={(value) => setDraft({ ...draft, recommended_next_action: value })} />
-          <TextArea label="Original notes" value={draft.notes} onChange={(value) => setDraft({ ...draft, notes: value })} />
-          <TextArea label="Latest interaction" value={draft.latest_interaction} onChange={(value) => setDraft({ ...draft, latest_interaction: value })} />
-          <div className="form-grid two-col">
-            <Field label="Introduced by" value={draft.introduced_by} onChange={(value) => setDraft({ ...draft, introduced_by: value })} />
-            <Field label="Connected to" value={draft.connected_to} onChange={(value) => setDraft({ ...draft, connected_to: value })} />
-          </div>
-          <Field label="Tags" value={draft.tags} onChange={(value) => setDraft({ ...draft, tags: value })} />
+        <div className="drawer-tabs" role="tablist" aria-label="Contact details">
+          <button className={drawerTab === "profile" ? "active" : ""} onClick={() => setDrawerTab("profile")}>
+            <Users size={14} /> Profile
+          </button>
+          <button className={drawerTab === "activity" ? "active" : ""} onClick={() => setDrawerTab("activity")}>
+            <Activity size={14} /> Activity {activityItems.length > 0 && <b>{activityItems.length}</b>}
+          </button>
         </div>
+        {drawerTab === "profile" ? (
+          <div className="drawer-body">
+            <div className="insight-card">
+              <span><Sparkles size={14} /> AI summary</span>
+              <p>{draft.ai_summary || "No summary yet. Run enrichment to create one."}</p>
+            </div>
+            <div className="form-grid two-col">
+              <Field label="Full name" value={draft.full_name} onChange={(value) => setDraft({ ...draft, full_name: value })} />
+              <Field label="Company" value={draft.company} onChange={(value) => setDraft({ ...draft, company: value })} />
+              <Field label="Position" value={draft.position} onChange={(value) => setDraft({ ...draft, position: value })} />
+              <Field label="Email" value={draft.email} type="email" onChange={(value) => setDraft({ ...draft, email: value })} />
+              <Field label="City" value={draft.city} onChange={(value) => setDraft({ ...draft, city: value })} />
+              <Field label="Country" value={draft.country} onChange={(value) => setDraft({ ...draft, country: value })} />
+              <SelectField label="Category" value={draft.category} options={["Booking Agent", "Promoter/Programmer", "Venue", "Journalist / Media", "Record Label", "Publisher", "Other", "Unknown"]} onChange={(value) => setDraft({ ...draft, category: value })} />
+              <SelectField label="Stage" value={draft.relationship_stage} options={opportunityStages} onChange={(value) => setDraft({ ...draft, relationship_stage: value })} />
+              <SelectField label="Temperature" value={draft.relationship_temperature} options={["Hot", "Warm", "Cooling", "Cold"]} onChange={(value) => setDraft({ ...draft, relationship_temperature: value as Temperature })} />
+              <SelectField label="Priority" value={draft.priority} options={["High", "Medium", "Low"]} onChange={(value) => setDraft({ ...draft, priority: value as Priority })} />
+              <Field label="Relationship score" value={String(draft.relationship_score)} type="number" onChange={(value) => setDraft({ ...draft, relationship_score: Math.min(100, Math.max(0, Number(value))) })} />
+              <Field label="Next follow-up" value={draft.next_follow_up_date} type="date" onChange={(value) => setDraft({ ...draft, next_follow_up_date: value })} />
+            </div>
+            <Field label="Opportunity summary" value={draft.opportunity_summary} onChange={(value) => setDraft({ ...draft, opportunity_summary: value })} />
+            <TextArea label="Recommended next action" value={draft.recommended_next_action} onChange={(value) => setDraft({ ...draft, recommended_next_action: value })} />
+            <TextArea label="Original notes" value={draft.notes} onChange={(value) => setDraft({ ...draft, notes: value })} />
+            <TextArea label="Latest interaction" value={draft.latest_interaction} onChange={(value) => setDraft({ ...draft, latest_interaction: value })} />
+            <div className="form-grid two-col">
+              <Field label="Introduced by" value={draft.introduced_by} onChange={(value) => setDraft({ ...draft, introduced_by: value })} />
+              <Field label="Connected to" value={draft.connected_to} onChange={(value) => setDraft({ ...draft, connected_to: value })} />
+            </div>
+            <Field label="Tags" value={draft.tags} onChange={(value) => setDraft({ ...draft, tags: value })} />
+          </div>
+        ) : (
+          <div className="drawer-body activity-body">
+            <section className="activity-composer">
+              <div>
+                <span className="eyebrow">Relationship note</span>
+                <strong>Record what matters next.</strong>
+                <small>Notes stay in this browser and are never treated as sent messages.</small>
+              </div>
+              <textarea
+                value={activityNote}
+                onChange={(event) => setActivityNote(event.target.value)}
+                placeholder="e.g. Asked for the new live video and September availability."
+                rows={3}
+                aria-label="New relationship note"
+              />
+              <button className="button button-secondary" onClick={addNote} disabled={!activityNote.trim()}>
+                <Plus size={14} /> Add note
+              </button>
+            </section>
+            <section className="activity-timeline">
+              <div className="activity-heading">
+                <div><span className="eyebrow">History</span><strong>What has happened</strong></div>
+                <small>{activityItems.length} recorded {activityItems.length === 1 ? "event" : "events"}</small>
+              </div>
+              {activityItems.map((item) => (
+                <article className={`activity-item activity-${item.kind}`} key={item.id}>
+                  <span className="activity-marker">
+                    {item.kind === "follow-up" ? <CalendarClock size={14} /> :
+                      item.kind === "project" ? <FolderKanban size={14} /> :
+                      item.kind === "note" ? <MessageSquareText size={14} /> :
+                      item.kind === "enrichment" ? <WandSparkles size={14} /> :
+                      <Activity size={14} />}
+                  </span>
+                  <div>
+                    <div className="activity-item-title">
+                      <strong>{item.title}</strong>
+                      {item.kind === "note" && (
+                        <button
+                          className="activity-remove"
+                          onClick={() => onRemoveActivity(item.id)}
+                          aria-label={`Remove note: ${item.detail}`}
+                          title="Remove note"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <p>{item.detail}</p>
+                    <small>{formatActivityDate(item.createdAt)}</small>
+                  </div>
+                </article>
+              ))}
+              {!activityItems.length && (
+                <div className="activity-empty">
+                  <Activity size={20} />
+                  <strong>No recorded activity yet.</strong>
+                  <p>Add a note or update this relationship to start a clear history.</p>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
         <div className="drawer-footer">
           <button className="button button-ghost" onClick={onClose}>Cancel</button>
           <button className="button button-primary" onClick={save}><Check size={15} /> Save changes</button>

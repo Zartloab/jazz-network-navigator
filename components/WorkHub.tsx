@@ -9,11 +9,13 @@ import {
   Circle,
   Clock3,
   FolderKanban,
+  HandCoins,
   Lightbulb,
   Link2,
   ListChecks,
   Plus,
   Route,
+  ReceiptText,
   ScanSearch,
   Sparkles,
   Target,
@@ -26,6 +28,9 @@ import {
   AppView,
   ArtistProfile,
   Contact,
+  DealStatus,
+  ExpenseCategory,
+  ExpenseStatus,
   ResearchOpportunity,
   WorkProject,
   WorkProjectStatus,
@@ -34,6 +39,16 @@ import {
 
 const projectTypes: WorkProjectType[] = ["Tour", "Release", "Campaign", "Collaboration"];
 const projectStatuses: WorkProjectStatus[] = ["Idea", "Planning", "Active", "Complete"];
+const dealStatuses: DealStatus[] = ["Lead", "Offered", "Negotiating", "Confirmed", "Paid", "Lost"];
+const expenseStatuses: ExpenseStatus[] = ["Planned", "Committed", "Paid"];
+const expenseCategories: ExpenseCategory[] = [
+  "Travel",
+  "Accommodation",
+  "Production",
+  "Musicians",
+  "Marketing",
+  "Other",
+];
 
 type HubTab = "overview" | "calendar" | "outcomes";
 
@@ -49,6 +64,8 @@ const emptyProject = (profile: ArtistProfile): Omit<WorkProject, "id" | "created
   contactIds: [],
   opportunityIds: [],
   tasks: [],
+  deals: [],
+  expenses: [],
 });
 
 function dateLabel(value: string): string {
@@ -65,6 +82,31 @@ function daysFromNow(value: string): number {
       new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00`).getTime()) /
       86400000,
   );
+}
+
+function dealAmount(value: string): number {
+  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatDealAmount(amount: string, currency: string): string {
+  if (!amount.trim()) return "No fee recorded";
+  const cleaned = amount.replace(/[^0-9.-]/g, "");
+  const numeric = Number(cleaned);
+  if (!cleaned || !Number.isFinite(numeric)) return `${currency} ${amount}`;
+  try {
+    return new Intl.NumberFormat("en", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(numeric);
+  } catch {
+    return `${currency} ${numeric.toLocaleString()}`;
+  }
+}
+
+function contactLabelForSort(contact: Contact): string {
+  return contact.full_name || contact.company || "";
 }
 
 export default function WorkHub({
@@ -88,6 +130,28 @@ export default function WorkHub({
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [newTask, setNewTask] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
+  const [showDealForm, setShowDealForm] = useState(false);
+  const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [dealDraft, setDealDraft] = useState({
+    projectId: "",
+    title: "",
+    contactId: "",
+    amount: "",
+    currency: "EUR",
+    status: "Offered" as DealStatus,
+    eventDate: "",
+    notes: "",
+  });
+  const [expenseDraft, setExpenseDraft] = useState({
+    projectId: "",
+    title: "",
+    category: "Travel" as ExpenseCategory,
+    amount: "",
+    currency: "EUR",
+    status: "Planned" as ExpenseStatus,
+    dueDate: "",
+    notes: "",
+  });
 
   const activeProjects = projects.filter((project) => project.status !== "Complete");
   const activeOpportunities = opportunities.filter(
@@ -212,6 +276,157 @@ export default function WorkHub({
     setNewTaskDate("");
   };
 
+  const openDealForm = (projectId = selectedProject?.id || activeProjects[0]?.id || "") => {
+    setDealDraft((current) => ({ ...current, projectId }));
+    setShowDealForm(true);
+  };
+
+  const addDeal = () => {
+    if (!dealDraft.projectId || !dealDraft.title.trim()) return;
+    const project = projects.find((item) => item.id === dealDraft.projectId);
+    if (!project) return;
+    updateProject(project.id, {
+      deals: [
+        ...project.deals,
+        {
+          id: `DEAL-${Date.now()}`,
+          title: dealDraft.title.trim(),
+          contactId: dealDraft.contactId,
+          amount: dealDraft.amount.trim(),
+          currency: dealDraft.currency,
+          status: dealDraft.status,
+          eventDate: dealDraft.eventDate,
+          notes: dealDraft.notes.trim(),
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+    setDealDraft({
+      projectId: "",
+      title: "",
+      contactId: "",
+      amount: "",
+      currency: "EUR",
+      status: "Offered",
+      eventDate: "",
+      notes: "",
+    });
+    setShowDealForm(false);
+  };
+
+  const updateDeal = (
+    projectId: string,
+    dealId: string,
+    patch: Partial<WorkProject["deals"][number]>,
+  ) => {
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    updateProject(projectId, {
+      deals: project.deals.map((deal) => (deal.id === dealId ? { ...deal, ...patch } : deal)),
+    });
+  };
+
+  const removeDeal = (projectId: string, dealId: string) => {
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    updateProject(projectId, {
+      deals: project.deals.filter((deal) => deal.id !== dealId),
+    });
+  };
+
+  const openExpenseForm = (projectId = selectedProject?.id || activeProjects[0]?.id || "") => {
+    setExpenseDraft((current) => ({ ...current, projectId }));
+    setShowExpenseForm(true);
+  };
+
+  const addExpense = () => {
+    if (!expenseDraft.projectId || !expenseDraft.title.trim()) return;
+    const project = projects.find((item) => item.id === expenseDraft.projectId);
+    if (!project) return;
+    updateProject(project.id, {
+      expenses: [
+        ...project.expenses,
+        {
+          id: `EXPENSE-${Date.now()}`,
+          title: expenseDraft.title.trim(),
+          category: expenseDraft.category,
+          amount: expenseDraft.amount.trim(),
+          currency: expenseDraft.currency,
+          status: expenseDraft.status,
+          dueDate: expenseDraft.dueDate,
+          notes: expenseDraft.notes.trim(),
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+    setExpenseDraft({
+      projectId: "",
+      title: "",
+      category: "Travel",
+      amount: "",
+      currency: "EUR",
+      status: "Planned",
+      dueDate: "",
+      notes: "",
+    });
+    setShowExpenseForm(false);
+  };
+
+  const updateExpense = (
+    projectId: string,
+    expenseId: string,
+    patch: Partial<WorkProject["expenses"][number]>,
+  ) => {
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    updateProject(projectId, {
+      expenses: project.expenses.map((expense) =>
+        expense.id === expenseId ? { ...expense, ...patch } : expense,
+      ),
+    });
+  };
+
+  const removeExpense = (projectId: string, expenseId: string) => {
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    updateProject(projectId, {
+      expenses: project.expenses.filter((expense) => expense.id !== expenseId),
+    });
+  };
+
+  const allDeals = projects.flatMap((project) =>
+    project.deals.map((deal) => ({ ...deal, projectId: project.id, projectName: project.name })),
+  );
+  const confirmedDeals = allDeals.filter(
+    (deal) => deal.status === "Confirmed" || deal.status === "Paid",
+  );
+  const openDeals = allDeals.filter(
+    (deal) => deal.status === "Offered" || deal.status === "Negotiating",
+  );
+  const totalsByCurrency = confirmedDeals.reduce<Record<string, number>>((totals, deal) => {
+    const amount = dealAmount(deal.amount);
+    if (amount > 0) totals[deal.currency] = (totals[deal.currency] || 0) + amount;
+    return totals;
+  }, {});
+  const allExpenses = projects.flatMap((project) =>
+    project.expenses.map((expense) => ({
+      ...expense,
+      projectId: project.id,
+      projectName: project.name,
+    })),
+  );
+  const expenseTotalsByCurrency = allExpenses.reduce<Record<string, number>>(
+    (totals, expense) => {
+      const amount = dealAmount(expense.amount);
+      if (amount > 0) totals[expense.currency] = (totals[expense.currency] || 0) + amount;
+      return totals;
+    },
+    {},
+  );
+  const financialCurrencies = [
+    ...new Set([...Object.keys(totalsByCurrency), ...Object.keys(expenseTotalsByCurrency)]),
+  ].sort();
+
   const booked = contacts.filter((contact) =>
     /booked|confirmed|contract/i.test(contact.relationship_stage),
   ).length;
@@ -220,10 +435,6 @@ export default function WorkHub({
       contact.relationship_temperature === "Hot" ||
       contact.relationship_temperature === "Warm",
   ).length;
-  const inProgress = opportunities.filter(
-    (opportunity) => opportunity.status === "In progress",
-  ).length;
-
   const playbooks = [
     {
       title: "Plan a tour",
@@ -485,11 +696,35 @@ export default function WorkHub({
           <article className="panel outcome-summary">
             <div className="work-section-heading"><div><span className="eyebrow">Progress snapshot</span><h3>What the work is producing</h3><p>Only recorded workspace activity is counted. No results are assumed.</p></div></div>
             <div className="outcome-metrics">
-              <span><b>{booked}</b><small>Booked or confirmed relationships</small></span>
-              <span><b>{inProgress}</b><small>Opportunities in progress</small></span>
+              <span><b>{confirmedDeals.length || booked}</b><small>{confirmedDeals.length ? "Confirmed or paid bookings" : "Booked or confirmed relationships"}</small></span>
+              <span><b>{openDeals.length}</b><small>Offers being discussed</small></span>
               <span><b>{warm}</b><small>Warm and hot relationships</small></span>
               <span><b>{projects.filter((project) => project.status === "Complete").length}</b><small>Completed projects</small></span>
             </div>
+            {financialCurrencies.length > 0 && (
+              <div className="finance-snapshot">
+                <span>Booking value against planned costs</span>
+                <div>
+                  {financialCurrencies.map((currency) => {
+                    const income = totalsByCurrency[currency] || 0;
+                    const costs = expenseTotalsByCurrency[currency] || 0;
+                    const balance = income - costs;
+                    return (
+                      <article key={currency}>
+                        <small>{currency}</small>
+                        <strong>{formatDealAmount(String(income), currency)}</strong>
+                        <span>confirmed income</span>
+                        <b className={balance < 0 ? "negative" : ""}>
+                          {formatDealAmount(String(balance < 0 ? Math.abs(balance) : balance), currency)}
+                        </b>
+                        <span>{balance < 0 ? "to break even" : "forecast balance"}</span>
+                      </article>
+                    );
+                  })}
+                </div>
+                <small>Planned costs count toward the forecast. Confirmation and payment statuses are entered manually.</small>
+              </div>
+            )}
           </article>
           <article className="panel outcome-guidance">
             <span><Lightbulb size={18} /></span>
@@ -505,6 +740,111 @@ export default function WorkHub({
               </div>
             ))}
             {!projects.length && <div className="timeline-empty"><CircleDollarSign size={17} /> Add a project goal or target to make progress visible.</div>}
+          </article>
+          <article className="panel deal-ledger">
+            <div className="work-section-heading">
+              <div>
+                <span className="eyebrow">Booking ledger</span>
+                <h3>Track the commercial conversation.</h3>
+                <p>Record offers, negotiations, confirmations, and payments without implying anything was received automatically.</p>
+              </div>
+              {projects.length > 0 && (
+                <button className="button button-secondary" onClick={() => openDealForm()}>
+                  <Plus size={13} /> Add booking
+                </button>
+              )}
+            </div>
+            {showDealForm && (
+              <div className="deal-form">
+                <label><span>Project</span><select value={dealDraft.projectId} onChange={(event) => setDealDraft({ ...dealDraft, projectId: event.target.value })}><option value="">Choose a project</option>{projects.filter((project) => project.status !== "Complete").map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
+                <label><span>Booking or deal</span><input value={dealDraft.title} onChange={(event) => setDealDraft({ ...dealDraft, title: event.target.value })} placeholder="e.g. Berlin venue offer" /></label>
+                <label><span>Contact</span><select value={dealDraft.contactId} onChange={(event) => setDealDraft({ ...dealDraft, contactId: event.target.value })}><option value="">No contact selected</option>{contacts.filter((contact) => contact.full_name || contact.company).sort((a, b) => contactLabelForSort(a).localeCompare(contactLabelForSort(b))).map((contact) => <option value={contact.id} key={contact.id}>{contact.full_name || contact.company}</option>)}</select></label>
+                <label><span>Amount</span><input value={dealDraft.amount} onChange={(event) => setDealDraft({ ...dealDraft, amount: event.target.value })} placeholder="e.g. 1500" /></label>
+                <label><span>Currency</span><select value={dealDraft.currency} onChange={(event) => setDealDraft({ ...dealDraft, currency: event.target.value })}><option>EUR</option><option>USD</option><option>GBP</option><option>AUD</option><option>CAD</option><option>CHF</option></select></label>
+                <label><span>Status</span><select value={dealDraft.status} onChange={(event) => setDealDraft({ ...dealDraft, status: event.target.value as DealStatus })}>{dealStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+                <label><span>Show or decision date</span><input type="date" value={dealDraft.eventDate} onChange={(event) => setDealDraft({ ...dealDraft, eventDate: event.target.value })} /></label>
+                <label className="wide"><span>Notes</span><input value={dealDraft.notes} onChange={(event) => setDealDraft({ ...dealDraft, notes: event.target.value })} placeholder="Terms, travel, deposit, next decision..." /></label>
+                <div className="deal-form-actions">
+                  <button className="text-button" onClick={() => setShowDealForm(false)}>Cancel</button>
+                  <button className="button button-primary" onClick={addDeal} disabled={!dealDraft.projectId || !dealDraft.title.trim()}><HandCoins size={14} /> Record booking</button>
+                </div>
+              </div>
+            )}
+            <div className="deal-list">
+              {allDeals
+                .sort((a, b) => (b.eventDate || b.createdAt).localeCompare(a.eventDate || a.createdAt))
+                .map((deal) => {
+                  const contact = contacts.find((item) => item.id === deal.contactId);
+                  return (
+                    <div key={deal.id}>
+                      <span className={`deal-status-dot ${deal.status.toLowerCase()}`} />
+                      <div className="deal-main"><strong>{deal.title}</strong><small>{deal.projectName}{contact ? ` · ${contact.full_name || contact.company}` : ""}</small>{deal.notes && <p>{deal.notes}</p>}</div>
+                      <div className="deal-date"><strong>{deal.eventDate ? dateLabel(deal.eventDate) : "Date not set"}</strong><small>{deal.status}</small></div>
+                      <b className="deal-amount">{formatDealAmount(deal.amount, deal.currency)}</b>
+                      <select value={deal.status} onChange={(event) => updateDeal(deal.projectId, deal.id, { status: event.target.value as DealStatus })} aria-label={`Status for ${deal.title}`}>{dealStatuses.map((status) => <option key={status}>{status}</option>)}</select>
+                      <button className="project-delete" onClick={() => removeDeal(deal.projectId, deal.id)} title="Remove booking"><Trash2 size={12} /></button>
+                    </div>
+                  );
+                })}
+              {!allDeals.length && (
+                <div className="deal-empty">
+                  <span><HandCoins size={20} /></span>
+                  <div><strong>No commercial activity recorded yet.</strong><small>{projects.length ? "Add an offer or booking when a real conversation starts." : "Create a project first, then record its offers and confirmed work here."}</small></div>
+                  {projects.length > 0 && <button className="button button-secondary" onClick={() => openDealForm()}>Record first booking</button>}
+                </div>
+              )}
+            </div>
+          </article>
+          <article className="panel finance-ledger">
+            <div className="work-section-heading">
+              <div>
+                <span className="eyebrow">Budget and break-even</span>
+                <h3>Know what the project needs to earn.</h3>
+                <p>Track planned, committed, and paid costs. Forecasts stay separate by currency and use only the numbers you record.</p>
+              </div>
+              {projects.length > 0 && (
+                <button className="button button-secondary" onClick={() => openExpenseForm()}>
+                  <Plus size={13} /> Add cost
+                </button>
+              )}
+            </div>
+            {showExpenseForm && (
+              <div className="deal-form expense-form">
+                <label><span>Project</span><select value={expenseDraft.projectId} onChange={(event) => setExpenseDraft({ ...expenseDraft, projectId: event.target.value })}><option value="">Choose a project</option>{projects.filter((project) => project.status !== "Complete").map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
+                <label><span>Cost</span><input value={expenseDraft.title} onChange={(event) => setExpenseDraft({ ...expenseDraft, title: event.target.value })} placeholder="e.g. Berlin to Paris train" /></label>
+                <label><span>Category</span><select value={expenseDraft.category} onChange={(event) => setExpenseDraft({ ...expenseDraft, category: event.target.value as ExpenseCategory })}>{expenseCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
+                <label><span>Amount</span><input value={expenseDraft.amount} onChange={(event) => setExpenseDraft({ ...expenseDraft, amount: event.target.value })} placeholder="e.g. 240" /></label>
+                <label><span>Currency</span><select value={expenseDraft.currency} onChange={(event) => setExpenseDraft({ ...expenseDraft, currency: event.target.value })}><option>EUR</option><option>USD</option><option>GBP</option><option>AUD</option><option>CAD</option><option>CHF</option></select></label>
+                <label><span>Status</span><select value={expenseDraft.status} onChange={(event) => setExpenseDraft({ ...expenseDraft, status: event.target.value as ExpenseStatus })}>{expenseStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+                <label><span>Due or paid date</span><input type="date" value={expenseDraft.dueDate} onChange={(event) => setExpenseDraft({ ...expenseDraft, dueDate: event.target.value })} /></label>
+                <label className="wide"><span>Notes</span><input value={expenseDraft.notes} onChange={(event) => setExpenseDraft({ ...expenseDraft, notes: event.target.value })} placeholder="Who pays, deposit terms, receipt reminder..." /></label>
+                <div className="deal-form-actions">
+                  <button className="text-button" onClick={() => setShowExpenseForm(false)}>Cancel</button>
+                  <button className="button button-primary" onClick={addExpense} disabled={!expenseDraft.projectId || !expenseDraft.title.trim()}><ReceiptText size={14} /> Record cost</button>
+                </div>
+              </div>
+            )}
+            <div className="deal-list expense-list">
+              {allExpenses
+                .sort((a, b) => (b.dueDate || b.createdAt).localeCompare(a.dueDate || a.createdAt))
+                .map((expense) => (
+                  <div key={expense.id}>
+                    <span className={`expense-status-dot ${expense.status.toLowerCase()}`} />
+                    <div className="deal-main"><strong>{expense.title}</strong><small>{expense.projectName} · {expense.category}</small>{expense.notes && <p>{expense.notes}</p>}</div>
+                    <div className="deal-date"><strong>{expense.dueDate ? dateLabel(expense.dueDate) : "Date not set"}</strong><small>{expense.status}</small></div>
+                    <b className="deal-amount">{formatDealAmount(expense.amount, expense.currency)}</b>
+                    <select value={expense.status} onChange={(event) => updateExpense(expense.projectId, expense.id, { status: event.target.value as ExpenseStatus })} aria-label={`Status for cost ${expense.title}`}>{expenseStatuses.map((status) => <option key={status}>{status}</option>)}</select>
+                    <button className="project-delete" onClick={() => removeExpense(expense.projectId, expense.id)} title="Remove cost"><Trash2 size={12} /></button>
+                  </div>
+                ))}
+              {!allExpenses.length && (
+                <div className="deal-empty">
+                  <span><ReceiptText size={20} /></span>
+                  <div><strong>No project costs recorded yet.</strong><small>{projects.length ? "Add travel, accommodation, production, musician, or marketing costs to see a break-even forecast." : "Create a project first, then build a simple cost plan here."}</small></div>
+                  {projects.length > 0 && <button className="button button-secondary" onClick={() => openExpenseForm()}>Add first cost</button>}
+                </div>
+              )}
+            </div>
           </article>
         </div>
       )}
