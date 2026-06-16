@@ -6,12 +6,15 @@ import {
   Bell,
   Bot,
   CalendarClock,
+  ChartBar,
   Check,
   ChevronRight,
+  CircleDollarSign,
   CircleDot,
   Copy,
   Download,
   ExternalLink,
+  FileText,
   FileJson,
   Filter,
   Flame,
@@ -71,16 +74,21 @@ import {
 import {
   AppNotification,
   AppView,
+  ActProfile,
+  ArtistAsset,
   ArtistProfile,
+  ArtistWorkspace,
+  BookingDeal,
+  Campaign,
   Contact,
   ContactActivity,
   ContactActivityKind,
   EmailDraft,
   EmailIntent,
+  ManagerAction,
   Priority,
   ResearchOpportunity,
   RelationshipNoteSuggestion,
-  TodayTask,
   Temperature,
   WorkProject,
 } from "@/lib/types";
@@ -88,10 +96,23 @@ import TourBuilder from "@/components/TourBuilder";
 import OpportunityScout from "@/components/OpportunityScout";
 import ArtistProfileEditor from "@/components/ArtistProfileEditor";
 import CreativeStudio from "@/components/CreativeStudio";
-import WorkHub from "@/components/WorkHub";
+import CampaignHub from "@/components/CampaignHub";
+import DealsWorkspace from "@/components/DealsWorkspace";
 import CommandPalette from "@/components/CommandPalette";
 import { emptyArtistProfile } from "@/lib/creative-studio";
-import { buildTodayTasks } from "@/lib/today";
+import {
+  actToArtistProfile,
+  hamedActs,
+  hamedAssets,
+  hamedCampaigns,
+  hamedWorkspace,
+} from "@/lib/hamed-portfolio";
+import { buildManagerActions } from "@/lib/manager-actions";
+import {
+  buildInitialBookingDeals,
+  formatMoney,
+  summarizeBookingDeals,
+} from "@/lib/booking-deals";
 import {
   buildDataHealthSummary,
   DataHealthMetric,
@@ -104,6 +125,8 @@ const ARTIST_PROFILE_KEY = "jazz-network-navigator-artist-profile-v1";
 const TODAY_COMPLETED_KEY = "jazz-network-navigator-today-completed-v1";
 const PROJECTS_STORAGE_KEY = "jazz-network-navigator-projects-v1";
 const CONTACT_ACTIVITY_STORAGE_KEY = "jazz-network-navigator-contact-activity-v1";
+const PORTFOLIO_STORAGE_KEY = "jazz-network-navigator-portfolio-v1";
+const BOOKING_DEALS_STORAGE_KEY = "jazz-network-navigator-booking-deals-v1";
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
 const temperatureColors: Record<Temperature, string> = {
@@ -140,23 +163,28 @@ type MapFilter = (typeof mapFilters)[number];
 const viewDetails: Record<AppView, { title: string; description: string; help: string }> = {
   home: {
     title: "Today",
-    description: "A simple view of what needs your attention today.",
-    help: "Start here. Choose one recommended action, or use the shortcuts to plan a tour, follow up, find a contact, or ask AI.",
+    description: "The next booking moves that matter most.",
+    help: "Start here. See the five practical actions most likely to move bookings, follow-ups, and pitch readiness forward.",
+  },
+  deals: {
+    title: "Deals",
+    description: "Track gig leads, fees, follow-ups, and confirmed bookings.",
+    help: "Use Deals to see every booking target, what it might be worth, what needs to happen next, and whether the pitch is ready.",
   },
   work: {
-    title: "Projects",
-    description: "Plan and track tours, releases, campaigns, and collaborations.",
-    help: "Create a project to keep its goal, dates, related work, deadlines, and outcomes in one place.",
+    title: "Campaigns",
+    description: "Run tours, releases, bookings, commissions, and funding work.",
+    help: "Choose one campaign to see its next action, route, opportunities, people, materials, tasks, and money.",
   },
   relationships: {
-    title: "Relationships",
+    title: "People",
     description: "Follow up, move conversations forward, and find anyone in your network.",
     help: "Use the tabs to work through follow-ups, update the relationship pipeline, or search all contacts.",
   },
   discover: {
-    title: "Opportunities",
-    description: "Research openings and find the strongest route through your network.",
-    help: "Scout for opportunities first, then use the network map or Ask AI when you need a different view.",
+    title: "Find Work",
+    description: "Sourced openings, warm paths, and routing gaps.",
+    help: "Choose the campaign first. Find Work checks your network, routing needs, materials, and official sources before ranking opportunities.",
   },
   tour: {
     title: "Tour Builder",
@@ -164,13 +192,13 @@ const viewDetails: Record<AppView, { title: string; description: string; help: s
     help: "Enter the places and goal for your tour, then review the suggested contacts. Nothing is sent automatically.",
   },
   research: {
-    title: "Opportunity Scout",
+    title: "Opportunity Finder",
     description: "Find warm routes and current openings worth acting on.",
     help: "Start with a simple brief. Scout checks your saved network first and uses clearly linked web sources when live research is available.",
   },
   studio: {
-    title: "Creative Studio",
-    description: "Create useful pitches, story angles, and campaign material.",
+    title: "Pitch Room",
+    description: "Prepare outreach, pitches, and campaign material for approval.",
     help: "Choose what you need and who it is for. The studio uses your artist profile, creates drafts only, and never invents achievements.",
   },
   "follow-ups": {
@@ -189,9 +217,9 @@ const viewDetails: Record<AppView, { title: string; description: string; help: s
     help: "Choose one stage at a time. Move a contact by changing the status on their card.",
   },
   radar: {
-    title: "Network Map",
-    description: "Understand where your strongest relationships are located.",
-    help: "Use the filters above the map to focus on relationship warmth or contact type, then select a point for details.",
+    title: "Radar",
+    description: "Scan for campaign opportunities and warm routes.",
+    help: "Use Radar to review the weekly opportunity scanner, then use the map or Ask tools when you need more context.",
   },
   ask: {
     title: "Ask AI",
@@ -199,9 +227,19 @@ const viewDetails: Record<AppView, { title: string; description: string; help: s
     help: "Ask one specific question, such as who to contact in a city or which relationships deserve attention this week.",
   },
   settings: {
-    title: "Settings",
+    title: "Setup",
     description: "Check data quality, create backups, and prepare future automations.",
     help: "Your contact edits stay in this browser. Export a backup before resetting local data.",
+  },
+  calendar: {
+    title: "Calendar",
+    description: "See dates, follow-ups, deadlines, and route gaps.",
+    help: "Use Calendar to spot confirmed dates, pending windows, follow-ups, and empty route space before anything gets missed.",
+  },
+  income: {
+    title: "Income",
+    description: "Track fees, projected value, and break-even pressure.",
+    help: "Use Income to understand what is confirmed, what is likely, and where the current campaign still needs value.",
   },
 };
 
@@ -363,6 +401,12 @@ export default function JazzDashboard() {
   const [artistProfile, setArtistProfile] = useState<ArtistProfile>(emptyArtistProfile);
   const [completedTodayIds, setCompletedTodayIds] = useState<string[]>([]);
   const [projects, setProjects] = useState<WorkProject[]>([]);
+  const [artistWorkspace, setArtistWorkspace] = useState<ArtistWorkspace>(hamedWorkspace);
+  const [acts, setActs] = useState<ActProfile[]>(hamedActs);
+  const [assets, setAssets] = useState<ArtistAsset[]>(hamedAssets);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(hamedCampaigns);
+  const [bookingDeals, setBookingDeals] = useState<BookingDeal[]>([]);
+  const [bookingDealsHydrated, setBookingDealsHydrated] = useState(false);
   const [contactActivities, setContactActivities] = useState<ContactActivity[]>([]);
   const [commandOpen, setCommandOpen] = useState(false);
 
@@ -393,9 +437,34 @@ export default function JazzDashboard() {
     }
     const storedProjects = readLocalJson<WorkProject[]>(PROJECTS_STORAGE_KEY);
     if (storedProjects) setProjects(storedProjects.map(cleanProject));
+    const storedBookingDeals = readLocalJson<BookingDeal[]>(BOOKING_DEALS_STORAGE_KEY);
+    if (storedBookingDeals) setBookingDeals(storedBookingDeals);
     const storedActivities = readLocalJson<ContactActivity[]>(CONTACT_ACTIVITY_STORAGE_KEY);
     if (storedActivities) setContactActivities(storedActivities);
+    const storedPortfolio = readLocalJson<{
+      workspace?: ArtistWorkspace;
+      acts?: ActProfile[];
+      assets?: ArtistAsset[];
+      campaigns?: Campaign[];
+    }>(PORTFOLIO_STORAGE_KEY);
+    if (storedPortfolio) {
+      if (storedPortfolio.workspace) setArtistWorkspace(storedPortfolio.workspace);
+      if (Array.isArray(storedPortfolio.acts)) setActs(storedPortfolio.acts);
+      if (Array.isArray(storedPortfolio.assets)) setAssets(storedPortfolio.assets);
+      if (Array.isArray(storedPortfolio.campaigns)) setCampaigns(storedPortfolio.campaigns);
+    }
+    fetch("/api/airtable/workspace")
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!payload.available || !payload.workspace) return;
+        if (Array.isArray(payload.workspace.acts)) setActs(payload.workspace.acts);
+        if (Array.isArray(payload.workspace.assets)) setAssets(payload.workspace.assets);
+        if (Array.isArray(payload.workspace.campaigns)) setCampaigns(payload.workspace.campaigns);
+        if (Array.isArray(payload.workspace.opportunities)) setOpportunities(payload.workspace.opportunities);
+      })
+      .catch(() => undefined);
     setResearchHydrated(true);
+    setBookingDealsHydrated(true);
     setHydrated(true);
   }, []);
 
@@ -441,12 +510,25 @@ export default function JazzDashboard() {
   }, [projects, researchHydrated]);
 
   useEffect(() => {
+    if (!bookingDealsHydrated) return;
+    window.localStorage.setItem(BOOKING_DEALS_STORAGE_KEY, JSON.stringify(bookingDeals));
+  }, [bookingDeals, bookingDealsHydrated]);
+
+  useEffect(() => {
     if (!researchHydrated) return;
     window.localStorage.setItem(
       CONTACT_ACTIVITY_STORAGE_KEY,
       JSON.stringify(contactActivities),
     );
   }, [contactActivities, researchHydrated]);
+
+  useEffect(() => {
+    if (!researchHydrated) return;
+    window.localStorage.setItem(
+      PORTFOLIO_STORAGE_KEY,
+      JSON.stringify({ workspace: artistWorkspace, acts, assets, campaigns }),
+    );
+  }, [acts, artistWorkspace, assets, campaigns, researchHydrated]);
 
   useEffect(() => {
     const openCommand = (event: KeyboardEvent) => {
@@ -461,18 +543,34 @@ export default function JazzDashboard() {
 
   useEffect(() => {
     if (!researchHydrated || !contacts.length || opportunities.length) return;
+    const campaign = campaigns.find((item) => item.status === "Active") || campaigns[0];
+    const act = campaign ? acts.find((item) => item.id === campaign.actId) : undefined;
     setOpportunities(
       buildLocalOpportunityScan(
         {
-          locations: "",
-          genres: "Jazz, improvised music",
-          goals: "Paid shows, festivals, press, funding",
-          notes: "",
+          campaignId: campaign?.id,
+          locations: campaign?.targetRegions.join(", ") || "",
+          genres: act?.genres || "Jazz, improvised music",
+          goals: campaign?.goal || "Paid shows, festivals, press, funding",
+          notes: campaign?.notes || "",
         },
         contacts,
       ),
     );
-  }, [contacts, opportunities.length, researchHydrated]);
+  }, [acts, campaigns, contacts, opportunities.length, researchHydrated]);
+
+  useEffect(() => {
+    if (!bookingDealsHydrated || bookingDeals.length || !contacts.length || !campaigns.length) return;
+    setBookingDeals(
+      buildInitialBookingDeals({
+        campaigns,
+        acts,
+        assets,
+        opportunities,
+        contacts,
+      }),
+    );
+  }, [acts, assets, bookingDeals.length, bookingDealsHydrated, campaigns, contacts, opportunities]);
 
   const selectedContact = contacts.find((contact) => contact.id === selectedId) || null;
   const emailContact = contacts.find((contact) => contact.id === emailContactId) || null;
@@ -593,6 +691,8 @@ export default function JazzDashboard() {
       "jazz-network-navigator-tour-plan-v1",
       PROJECTS_STORAGE_KEY,
       CONTACT_ACTIVITY_STORAGE_KEY,
+      PORTFOLIO_STORAGE_KEY,
+      BOOKING_DEALS_STORAGE_KEY,
     ].forEach((key) => window.localStorage.removeItem(key));
     setContacts([]);
     setOpportunities([]);
@@ -600,6 +700,11 @@ export default function JazzDashboard() {
     setArtistProfile(emptyArtistProfile);
     setCompletedTodayIds([]);
     setProjects([]);
+    setArtistWorkspace(hamedWorkspace);
+    setActs(hamedActs);
+    setAssets(hamedAssets);
+    setCampaigns(hamedCampaigns);
+    setBookingDeals([]);
     setContactActivities([]);
     setSelectedId(null);
     setLocked(true);
@@ -621,7 +726,9 @@ export default function JazzDashboard() {
           opportunities,
           artistProfile,
           projects,
+          bookingDeals,
           contactActivities,
+          portfolio: { workspace: artistWorkspace, acts, assets, campaigns },
           readNotificationIds,
           completedToday: { date: TODAY(), ids: completedTodayIds },
           modules: {
@@ -643,7 +750,14 @@ export default function JazzDashboard() {
       opportunities?: ResearchOpportunity[];
       artistProfile?: ArtistProfile;
       projects?: WorkProject[];
+      bookingDeals?: BookingDeal[];
       contactActivities?: ContactActivity[];
+      portfolio?: {
+        workspace?: ArtistWorkspace;
+        acts?: ActProfile[];
+        assets?: ArtistAsset[];
+        campaigns?: Campaign[];
+      };
       readNotificationIds?: string[];
       completedToday?: { date?: string; ids?: string[] };
       modules?: {
@@ -672,9 +786,19 @@ export default function JazzDashboard() {
       Array.isArray(parsed.projects) ? parsed.projects.map(cleanProject) : [],
     );
     writeOrRemove(
+      BOOKING_DEALS_STORAGE_KEY,
+      Array.isArray(parsed.bookingDeals) ? parsed.bookingDeals : [],
+    );
+    writeOrRemove(
       CONTACT_ACTIVITY_STORAGE_KEY,
       Array.isArray(parsed.contactActivities) ? parsed.contactActivities : [],
     );
+    writeOrRemove(PORTFOLIO_STORAGE_KEY, {
+      workspace: parsed.portfolio?.workspace || hamedWorkspace,
+      acts: Array.isArray(parsed.portfolio?.acts) ? parsed.portfolio.acts : hamedActs,
+      assets: Array.isArray(parsed.portfolio?.assets) ? parsed.portfolio.assets : hamedAssets,
+      campaigns: Array.isArray(parsed.portfolio?.campaigns) ? parsed.portfolio.campaigns : hamedCampaigns,
+    });
     writeOrRemove(
       NOTIFICATION_READ_KEY,
       Array.isArray(parsed.readNotificationIds) ? parsed.readNotificationIds : [],
@@ -766,6 +890,9 @@ export default function JazzDashboard() {
                 contacts={contacts}
                 opportunities={opportunities}
                 projects={projects}
+                bookingDeals={bookingDeals}
+                campaigns={campaigns}
+                assets={assets}
                 profile={artistProfile}
                 completedTodayIds={completedTodayIds}
                 onCompleteToday={(id) =>
@@ -778,13 +905,26 @@ export default function JazzDashboard() {
                 onAdd={() => setShowAdd(true)}
               />
             )}
+            {activeView === "deals" && (
+              <DealsWorkspace
+                deals={bookingDeals}
+                onDealsChange={setBookingDeals}
+                contacts={contacts}
+                campaigns={campaigns}
+                acts={acts}
+                assets={assets}
+                opportunities={opportunities}
+                onNavigate={navigate}
+              />
+            )}
             {activeView === "work" && (
-              <WorkHub
+              <CampaignHub
+                acts={acts}
+                assets={assets}
+                campaigns={campaigns}
+                onCampaignsChange={setCampaigns}
                 contacts={contacts}
                 opportunities={opportunities}
-                profile={artistProfile}
-                projects={projects}
-                onProjectsChange={setProjects}
                 onNavigate={navigate}
               />
             )}
@@ -806,14 +946,17 @@ export default function JazzDashboard() {
                 onSourceFilter={setSourceFilter}
               />
             )}
-            {activeView === "discover" && (
+            {(activeView === "discover" || activeView === "radar") && (
               <DiscoverWorkspace
                 contacts={contacts}
                 profile={artistProfile}
                 opportunities={opportunities}
                 onOpportunityChange={setOpportunities}
-                projects={projects}
-                onProjectsChange={setProjects}
+                campaigns={campaigns}
+                onCampaignsChange={setCampaigns}
+                acts={acts}
+                assets={assets}
+                workspace={artistWorkspace}
                 onSelect={setSelectedId}
                 mapFilter={mapFilter}
                 onMapFilter={setMapFilter}
@@ -821,18 +964,22 @@ export default function JazzDashboard() {
                 onMapHover={setMapHoverId}
               />
             )}
-            {activeView === "radar" && (
-              <>
-                <PageGuide text="Filter the map, then select any signal to open that contact’s full record." />
-                <RelationshipSection
-                  contacts={contacts}
-                  filter={mapFilter}
-                  onFilter={setMapFilter}
-                  hoverId={mapHoverId}
-                  onHover={setMapHoverId}
-                  onSelect={setSelectedId}
-                />
-              </>
+            {activeView === "calendar" && (
+              <CalendarWorkspace
+                contacts={contacts}
+                campaigns={campaigns}
+                deals={bookingDeals}
+                opportunities={opportunities}
+                onNavigate={navigate}
+              />
+            )}
+            {activeView === "income" && (
+              <IncomeWorkspace
+                campaigns={campaigns}
+                deals={bookingDeals}
+                workspace={artistWorkspace}
+                onNavigate={navigate}
+              />
             )}
             {activeView === "follow-ups" && (
               <>
@@ -848,14 +995,21 @@ export default function JazzDashboard() {
                 opportunities={opportunities}
                 onChange={setOpportunities}
                 onSelectContact={setSelectedId}
-                projects={projects}
-                onProjectsChange={setProjects}
+                campaigns={campaigns}
+                onCampaignsChange={setCampaigns}
+                acts={acts}
+                assets={assets}
+                workspace={artistWorkspace}
               />
             )}
             {activeView === "studio" && (
               <StudioWorkspace
                 profile={artistProfile}
                 onProfileChange={setArtistProfile}
+                workspace={artistWorkspace}
+                acts={acts}
+                assets={assets}
+                campaigns={campaigns}
               />
             )}
             {activeView === "pipeline" && (
@@ -892,6 +1046,14 @@ export default function JazzDashboard() {
             {activeView === "settings" && (
               <SettingsWorkspace
                 contacts={contacts}
+                workspace={artistWorkspace}
+                acts={acts}
+                assets={assets}
+                campaigns={campaigns}
+                opportunities={opportunities}
+                onWorkspaceChange={setArtistWorkspace}
+                onActsChange={setActs}
+                onAssetsChange={setAssets}
                 onSelectContact={setSelectedId}
                 onReset={resetData}
                 onExportWorkspace={exportWorkspace}
@@ -965,22 +1127,25 @@ function AppSidebar({
   onCloseMobile: () => void;
 }) {
   const primary = [
-    { view: "home" as AppView, label: "Today", icon: Home, hint: "What needs attention" },
-    { view: "work" as AppView, label: "Projects", icon: FolderKanban, hint: "Tours, releases, campaigns" },
-    { view: "relationships" as AppView, label: "Relationships", icon: Users, hint: "Follow-ups and contacts" },
-    { view: "discover" as AppView, label: "Opportunities", icon: ScanSearch, hint: "Research and network insight" },
-    { view: "studio" as AppView, label: "Studio", icon: WandSparkles, hint: "Pitches and creative work" },
+    { view: "home" as AppView, label: "Today", icon: Home, hint: "Next five moves" },
+    { view: "deals" as AppView, label: "Deals", icon: CircleDollarSign, hint: "Gig pipeline and money" },
+    { view: "work" as AppView, label: "Campaigns", icon: FolderKanban, hint: "Tours, releases, commissions" },
+    { view: "relationships" as AppView, label: "People", icon: Users, hint: "Follow-ups and contacts" },
+    { view: "studio" as AppView, label: "Pitch Room", icon: WandSparkles, hint: "Drafts and approvals" },
+    { view: "calendar" as AppView, label: "Calendar", icon: CalendarClock, hint: "Dates and route gaps" },
+    { view: "radar" as AppView, label: "Radar", icon: Radio, hint: "Opportunity scanner", badge: "New" },
+    { view: "income" as AppView, label: "Income", icon: ChartBar, hint: "Fees and break-even", badge: "New" },
   ];
   const activeGroup: AppView =
     activeView === "tour"
       ? "work"
       : ["follow-ups", "directory", "pipeline"].includes(activeView)
         ? "relationships"
-        : ["research", "radar", "ask"].includes(activeView)
-          ? "discover"
+        : ["discover", "research", "ask"].includes(activeView)
+          ? "radar"
           : activeView;
 
-  const renderItem = ({ view, label, icon: Icon, hint }: (typeof primary)[number]) => {
+  const renderItem = ({ view, label, icon: Icon, hint, badge }: (typeof primary)[number]) => {
     const active = activeGroup === view;
     return (
     <button
@@ -991,7 +1156,7 @@ function AppSidebar({
       data-tooltip={`${label}: ${viewDetails[view].help}`}
     >
       <Icon size={19} />
-      <span><strong>{label}</strong><small>{hint}</small></span>
+      <span><strong>{label}{badge && <b className="sidebar-new-badge">{badge}</b>}</strong><small>{hint}</small></span>
     </button>
     );
   };
@@ -1000,7 +1165,7 @@ function AppSidebar({
     <aside className={`app-sidebar${open ? "" : " collapsed"}${mobileOpen ? " mobile-open" : ""}`}>
       <div className="sidebar-brand">
         <span className="brand-mark"><Music2 size={20} /></span>
-        <span className="sidebar-brand-copy">Jazz Network<strong>Navigator</strong></span>
+        <span className="sidebar-brand-copy">Hamed<strong>Artist Manager</strong></span>
         <button className="sidebar-mobile-close" onClick={onCloseMobile} aria-label="Close navigation"><X size={18} /></button>
       </div>
       <nav className="sidebar-nav" aria-label="Main navigation">
@@ -1011,10 +1176,10 @@ function AppSidebar({
         <button
           className={`sidebar-link${activeView === "settings" ? " active" : ""}`}
           onClick={() => onNavigate("settings")}
-          data-tooltip="Settings, exports, and automation readiness"
+          data-tooltip="Setup, exports, and automation readiness"
         >
           <Settings size={19} />
-          <span><strong>Settings</strong><small>Data, backups, automation</small></span>
+          <span><strong>Setup</strong><small>Data, backups, automation</small></span>
         </button>
         <div className="privacy-note"><Check size={13} /><span>Saved locally in this browser</span></div>
         <button className="sidebar-collapse" onClick={onToggle} title={open ? "Collapse sidebar" : "Expand sidebar"}>
@@ -1114,7 +1279,7 @@ function AppTopbar({
                   setNotificationsOpen(false);
                 }}
               >
-                Open Opportunity Scout <ArrowRight size={13} />
+                Find work <ArrowRight size={13} />
               </button>
             </div>
           )}
@@ -1238,8 +1403,11 @@ function DiscoverWorkspace({
   profile,
   opportunities,
   onOpportunityChange,
-  projects,
-  onProjectsChange,
+  campaigns,
+  onCampaignsChange,
+  acts,
+  assets,
+  workspace,
   onSelect,
   mapFilter,
   onMapFilter,
@@ -1250,8 +1418,11 @@ function DiscoverWorkspace({
   profile: ArtistProfile;
   opportunities: ResearchOpportunity[];
   onOpportunityChange: (opportunities: ResearchOpportunity[]) => void;
-  projects: WorkProject[];
-  onProjectsChange: React.Dispatch<React.SetStateAction<WorkProject[]>>;
+  campaigns: Campaign[];
+  onCampaignsChange: React.Dispatch<React.SetStateAction<Campaign[]>>;
+  acts: ActProfile[];
+  assets: ArtistAsset[];
+  workspace: ArtistWorkspace;
   onSelect: (id: string) => void;
   mapFilter: MapFilter;
   onMapFilter: (filter: MapFilter) => void;
@@ -1267,9 +1438,9 @@ function DiscoverWorkspace({
     <section className="grouped-workspace">
       <div className="grouped-intro">
         <div>
-          <span className="eyebrow">Research workspace</span>
-          <h2>Find openings with a reason to act.</h2>
-          <p>Search for opportunities, understand where your network is strongest, or ask a focused question.</p>
+          <span className="eyebrow">Find work</span>
+          <h2>Find the next realistic opening.</h2>
+          <p>Review campaign opportunities first. Use the map or questions only when you need more context.</p>
         </div>
         <div className="grouped-summary">
           <span><strong>{saved}</strong><small>saved</small></span>
@@ -1278,13 +1449,13 @@ function DiscoverWorkspace({
       </div>
       <div className="hub-tabs" role="tablist" aria-label="Opportunity tools">
         <button className={tab === "scout" ? "active" : ""} onClick={() => setTab("scout")}>
-          <ScanSearch size={15} /> Scout {saved > 0 && <b>{saved}</b>}
+          <ScanSearch size={15} /> Opportunity inbox {saved > 0 && <b>{saved}</b>}
         </button>
         <button className={tab === "map" ? "active" : ""} onClick={() => setTab("map")}>
-          <MapIcon size={15} /> Network map
+          <MapIcon size={15} /> Warm paths
         </button>
         <button className={tab === "ask" ? "active" : ""} onClick={() => setTab("ask")}>
-          <Bot size={15} /> Ask AI
+          <Bot size={15} /> Ask the network
         </button>
       </div>
       {tab === "scout" && (
@@ -1294,8 +1465,11 @@ function DiscoverWorkspace({
           opportunities={opportunities}
           onChange={onOpportunityChange}
           onSelectContact={onSelect}
-          projects={projects}
-          onProjectsChange={onProjectsChange}
+          campaigns={campaigns}
+          onCampaignsChange={onCampaignsChange}
+          acts={acts}
+          assets={assets}
+          workspace={workspace}
         />
       )}
       {tab === "map" && (
@@ -1324,14 +1498,22 @@ function DiscoverWorkspace({
 function StudioWorkspace({
   profile,
   onProfileChange,
+  workspace,
+  acts,
+  assets,
+  campaigns,
 }: {
   profile: ArtistProfile;
   onProfileChange: (profile: ArtistProfile) => void;
+  workspace: ArtistWorkspace;
+  acts: ActProfile[];
+  assets: ArtistAsset[];
+  campaigns: Campaign[];
 }) {
   const [tab, setTab] = useState<"create" | "profile">("create");
   return (
     <section className="grouped-workspace">
-      <div className="hub-tabs" role="tablist" aria-label="Creative Studio">
+      <div className="hub-tabs" role="tablist" aria-label="Pitch Room">
         <button className={tab === "create" ? "active" : ""} onClick={() => setTab("create")}>
           <WandSparkles size={15} /> Create
         </button>
@@ -1340,7 +1522,14 @@ function StudioWorkspace({
         </button>
       </div>
       {tab === "create" ? (
-        <CreativeStudio profile={profile} onOpenProfile={() => setTab("profile")} />
+        <CreativeStudio
+          profile={profile}
+          workspace={workspace}
+          acts={acts}
+          assets={assets}
+          campaigns={campaigns}
+          onOpenProfile={() => setTab("profile")}
+        />
       ) : (
         <>
           <PageGuide text="Complete this once. Tours, research, drafts, and creative tools reuse the same factual context." />
@@ -1355,6 +1544,9 @@ function DashboardOverview({
   contacts,
   opportunities,
   projects,
+  bookingDeals,
+  campaigns,
+  assets,
   profile,
   completedTodayIds,
   onCompleteToday,
@@ -1367,6 +1559,9 @@ function DashboardOverview({
   contacts: Contact[];
   opportunities: ResearchOpportunity[];
   projects: WorkProject[];
+  bookingDeals: BookingDeal[];
+  campaigns: Campaign[];
+  assets: ArtistAsset[];
   profile: ArtistProfile;
   completedTodayIds: string[];
   onCompleteToday: (id: string) => void;
@@ -1376,237 +1571,565 @@ function DashboardOverview({
   onEmail: (id: string) => void;
   onAdd: () => void;
 }) {
+  const [activeAction, setActiveAction] = useState<ManagerAction | null>(null);
   const due = contacts
     .filter((contact) => isDue(contact.next_follow_up_date))
     .sort((a, b) => followUpUrgency(b) - followUpUrgency(a));
-  const hot = contacts.filter((contact) => contact.relationship_temperature === "Hot").length;
-  const active = contacts.filter((contact) => contact.relationship_stage !== "Unqualified").length;
-  const cityCount = new Set(
-    contacts.filter((contact) => contact.city && contact.city !== "Unknown").map((contact) => `${contact.city}|${contact.country}`),
-  ).size;
-  const todayTasks = buildTodayTasks(
+  const activeCampaigns = campaigns.filter((campaign) => campaign.status === "Active");
+  const suggestedCampaigns = campaigns.filter((campaign) => campaign.status === "Suggested");
+  const managerActions = buildManagerActions({
     contacts,
+    campaigns,
     opportunities,
-    profile,
-    completedTodayIds,
+    assets,
+    bookingDeals,
+    completedIds: completedTodayIds,
+  });
+  const dealSummary = summarizeBookingDeals(bookingDeals, campaigns);
+  const primaryCampaign = activeCampaigns[0] || suggestedCampaigns[0] || campaigns[0];
+  const campaignAssets = primaryCampaign
+    ? assets.filter((asset) => asset.actId === primaryCampaign.actId)
+    : assets;
+  const missingMaterials = primaryCampaign
+    ? primaryCampaign.requiredAssetKinds.filter(
+        (required) => !campaignAssets.some((asset) => asset.kind === required),
+      )
+    : [];
+  const routeGaps = activeCampaigns.flatMap((campaign) =>
+    campaign.routeStops.filter((routeDate) => routeDate.status === "Available"),
   );
-  const urgentToday = todayTasks.filter((task) => task.priority === "High").length;
-  const activeProjects = projects.filter((project) => project.status !== "Complete");
-  const sevenDaysFromNow = new Date();
-  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-  const sevenDaysIso = sevenDaysFromNow.toISOString().slice(0, 10);
-  const dueProjectTasks = activeProjects.flatMap((project) =>
-    project.tasks.filter(
-      (task) =>
-        task.status !== "Done" &&
-        task.dueDate &&
-        task.dueDate <= sevenDaysIso,
-    ),
-  );
-  const projectsWithoutNextMove = activeProjects.filter(
-    (project) =>
-      !project.tasks.some((task) => task.status !== "Done") &&
-      !project.opportunityIds.length &&
-      !project.contactIds.length,
-  ).length;
-  const hotWithoutDate = contacts.filter(
-    (contact) =>
-      contact.relationship_temperature === "Hot" &&
-      contact.relationship_stage !== "Unqualified" &&
-      !contact.next_follow_up_date,
-  ).length;
-  const priorityOpportunity = opportunities
-    .filter(
-      (opportunity) =>
-        opportunity.status === "In progress" || opportunity.status === "Saved",
-    )
-    .sort((a, b) => {
-      if (a.status !== b.status) return a.status === "In progress" ? -1 : 1;
-      return b.confidence - a.confidence;
-    })[0];
-  const managerFocus =
-    due.length > 0
-      ? {
-          title: `Clear ${due.length} due ${due.length === 1 ? "follow-up" : "follow-ups"}.`,
-          copy: "These are the easiest relationships to lose through silence. Start with the strongest one.",
-          action: "Open follow-ups",
-          view: "relationships" as AppView,
-        }
-      : dueProjectTasks.length > 0
-        ? {
-            title: `${dueProjectTasks.length} project ${dueProjectTasks.length === 1 ? "task is" : "tasks are"} due soon.`,
-            copy: "Move one practical task forward before opening a new piece of work.",
-            action: "Open projects",
-            view: "work" as AppView,
-          }
-        : priorityOpportunity
-          ? {
-              title: `Move “${priorityOpportunity.title}” forward.`,
-              copy: priorityOpportunity.nextAction || "Choose one clear next action and record the outcome.",
-              action: "Open opportunity",
-              view: "discover" as AppView,
-            }
-          : activeProjects.length > 0
-            ? {
-                title: `Choose the next move for ${activeProjects[0].name}.`,
-                copy: "Add one small task, one useful contact, or one opportunity to make the project actionable.",
-                action: "Open projects",
-                view: "work" as AppView,
-              }
-            : {
-                title: "Start the project that matters most.",
-                copy: "A project gives your contacts, opportunities, tasks, and creative work a shared purpose.",
-                action: "Create a project",
-                view: "work" as AppView,
-              };
+  const completedCount = completedTodayIds.length;
+  const planReady = managerActions.length > 0;
 
-  const quickActions = [
-    { title: "Open projects", copy: "Run a tour, release, campaign, or collaboration.", icon: FolderKanban, view: "work" as AppView },
-    { title: "Find opportunities", copy: "Research openings and warm routes.", icon: ScanSearch, view: "discover" as AppView },
-    { title: "Manage relationships", copy: `${due.length} follow-ups currently need attention.`, icon: Users, view: "relationships" as AppView },
-    { title: "Create a pitch", copy: "Build booking, press, and campaign material.", icon: WandSparkles, view: "studio" as AppView },
+  const moduleCards = [
+    {
+      title: "Deals",
+      copy: "Move gig leads, fees, and follow-ups forward.",
+      icon: CircleDollarSign,
+      view: "deals" as AppView,
+      stat: formatMoney(dealSummary.projectedIncome),
+    },
+    {
+      title: "Campaigns",
+      copy: "Choose the active tour, release, or commission push.",
+      icon: FolderKanban,
+      view: "work" as AppView,
+      stat: `${activeCampaigns.length || suggestedCampaigns.length} ready`,
+    },
+    {
+      title: "People",
+      copy: "Send follow-ups and update contact status.",
+      icon: Users,
+      view: "relationships" as AppView,
+      stat: `${due.length} due`,
+    },
+    {
+      title: "Pitch Room",
+      copy: "Prepare pitches and outreach for approval.",
+      icon: WandSparkles,
+      view: "studio" as AppView,
+      stat: "Draft only",
+    },
+  ];
+  const newModuleCards = [
+    {
+      title: "Calendar view",
+      copy: "See all confirmed and pending dates. Spot route gaps instantly.",
+      icon: CalendarClock,
+      color: "#712B13",
+      view: "calendar" as AppView,
+      badge: "New",
+    },
+    {
+      title: "Radar",
+      copy: "Weekly AI scan of festivals, venues, and labels ranked by fit.",
+      icon: Radio,
+      color: "#3C3489",
+      view: "radar" as AppView,
+      badge: "New",
+    },
+    {
+      title: "Income tracker",
+      copy: "Confirmed vs projected fees per campaign. Break-even by route.",
+      icon: ChartBar,
+      color: "#085041",
+      view: "income" as AppView,
+      badge: "New",
+    },
+    {
+      title: "Press & EPK",
+      copy: "Bio, photos, live links - always pitch-ready. Attach to any outreach draft.",
+      icon: FileText,
+      color: "#633806",
+      view: "studio" as AppView,
+      badge: "",
+    },
   ];
 
   return (
-    <section className="dashboard-overview">
-      <div className="dashboard-welcome">
+    <section className="manager-plan-workspace">
+      <div className="manager-plan-hero">
         <div>
-          <span className="eyebrow">Today’s workspace</span>
-          <h2>Here’s what needs attention.</h2>
-          <p>Choose one task below. You do not need to work through the whole app.</p>
+          <span className="eyebrow">Today</span>
+          <h2>Move the bookings that matter.</h2>
+          <p>
+            A short manager plan for income, follow-ups, route gaps, and pitch readiness.
+            No hunting through the whole app.
+          </p>
         </div>
-        <button className="button button-secondary" onClick={onAdd}><Plus size={15} /> Add someone new</button>
+        <div className="manager-plan-hero-actions">
+          {completedCount > 0 && (
+            <button className="button button-ghost" onClick={onResetToday}>
+              Restore hidden moves
+            </button>
+          )}
+          <button className="button button-secondary" onClick={onAdd}><Plus size={15} /> Add contact</button>
+        </div>
       </div>
 
-      <div className="overview-stats">
-        <article><span className="overview-stat-icon due"><CalendarClock size={18} /></span><div><strong>{due.length}</strong><small>Follow-ups due</small></div><HelpTip text="Contacts whose next follow-up date is today or earlier." /></article>
-        <article><span className="overview-stat-icon hot"><Flame size={18} /></span><div><strong>{hot}</strong><small>Hot relationships</small></div><HelpTip text="Your strongest, most active relationships." /></article>
-        <article><span className="overview-stat-icon active"><Target size={18} /></span><div><strong>{active}</strong><small>Active opportunities</small></div><HelpTip text="Contacts that have moved beyond the unqualified stage." /></article>
-        <article><span className="overview-stat-icon cities"><Globe2 size={18} /></span><div><strong>{cityCount}</strong><small>Cities covered</small></div><HelpTip text="Unique cities represented in your contact network." /></article>
+      <div className="manager-plan-summary">
+        <article>
+          <span><CircleDollarSign size={17} /></span>
+          <div><strong>{formatMoney(dealSummary.projectedIncome)}</strong><small>Projected income</small></div>
+          <HelpTip text="Estimated value of active deals still being worked. It is not confirmed income." />
+        </article>
+        <article>
+          <span><Target size={17} /></span>
+          <div><strong>{dealSummary.mostImportantDeal?.title || "No deal yet"}</strong><small>Best booking move</small></div>
+          <HelpTip text="The deal most likely to deserve attention first based on follow-up urgency, value, and fit." />
+        </article>
+        <article>
+          <span><Mail size={17} /></span>
+          <div><strong>{dealSummary.followUpsDue + due.length}</strong><small>Follow-ups due</small></div>
+          <HelpTip text="Booking deals and relationships whose follow-up date is today or earlier." />
+        </article>
+        <article>
+          <span><Sparkles size={17} /></span>
+          <div><strong>{missingMaterials.length}</strong><small>Pitch blockers</small></div>
+          <HelpTip text="Campaign assets that are required before confident outreach." />
+        </article>
       </div>
 
-      <article className="panel manager-brief">
-        <span className="manager-brief-icon"><Sparkles size={20} /></span>
-        <div className="manager-brief-copy">
-          <span className="eyebrow">Manager briefing</span>
-          <h3>{managerFocus.title}</h3>
-          <p>{managerFocus.copy}</p>
-        </div>
-        <div className="manager-signals">
-          <span className={dueProjectTasks.length ? "attention" : ""}><CalendarClock size={13} /><b>{dueProjectTasks.length}</b> project tasks due soon</span>
-          <span className={projectsWithoutNextMove ? "attention" : ""}><FolderKanban size={13} /><b>{projectsWithoutNextMove}</b> projects without a next move</span>
-          <span className={hotWithoutDate ? "attention" : ""}><Flame size={13} /><b>{hotWithoutDate}</b> hot contacts without a date</span>
-        </div>
-        <button className="button button-secondary" onClick={() => onNavigate(managerFocus.view)}>
-          {managerFocus.action} <ArrowRight size={13} />
-        </button>
-      </article>
-
-      <div className="overview-grid">
-        <article className="panel start-card">
+      <div className="manager-plan-grid">
+        <article className="panel manager-action-card">
           <div className="overview-card-heading">
-            <div><span className="eyebrow">Start here</span><h3>What would you like to do?</h3></div>
-            <span className="friendly-label">Pick one</span>
+            <div>
+              <span className="eyebrow">This week</span>
+              <h3>{planReady ? "Your next five useful moves" : "Everything urgent is clear"}</h3>
+            </div>
+            <span className={`friendly-label${planReady ? "" : " calm"}`}>
+              {planReady ? "Do these in order" : "No pressure"}
+            </span>
           </div>
-          <div className="quick-action-grid">
-            {quickActions.map(({ title, copy, icon: Icon, view }) => (
-              <button key={title} onClick={() => onNavigate(view)}>
-                <span><Icon size={19} /></span>
-                <div><strong>{title}</strong><small>{copy}</small></div>
-                <ChevronRight size={16} />
+          <div className="manager-action-list">
+            {managerActions.map((action, index) => (
+              <ManagerActionRow
+                key={action.id}
+                action={action}
+                index={index}
+                onAction={() => setActiveAction(action)}
+                onComplete={() => onCompleteToday(action.id)}
+              />
+            ))}
+            {!managerActions.length && (
+              <div className="manager-plan-empty">
+                <span><Check size={19} /></span>
+                <div>
+                  <strong>No urgent move is waiting.</strong>
+                  <small>Open Deals to add a booking lead, or Pitch Room to prepare outreach.</small>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="today-module-grid" aria-label="New manager modules">
+            {newModuleCards.map(({ title, copy, icon: Icon, color, view, badge }) => (
+                <button type="button" className="today-module-card" key={title} onClick={() => onNavigate(view)}>
+                <span className="today-module-icon" style={{ color }}><Icon size={18} /></span>
+                <span>
+                  <strong>{title}{badge && <b>{badge}</b>}</strong>
+                  <small>{copy}</small>
+                </span>
               </button>
             ))}
           </div>
         </article>
 
-        <article className="panel today-plan-card">
-          <div className="overview-card-heading">
+        <aside className="manager-side-stack">
+          <article className="panel manager-focus-card">
+            <span className="manager-focus-icon"><Target size={18} /></span>
             <div>
-              <span className="eyebrow">Your daily brief</span>
-              <h3>
-                {todayTasks.length
-                  ? `${todayTasks.length} useful next ${todayTasks.length === 1 ? "move" : "moves"}`
-                  : "You’re clear for today"}
-              </h3>
+              <span className="eyebrow">One focus</span>
+              <h3>{primaryCampaign ? primaryCampaign.name : "Choose a campaign"}</h3>
+              <p>{primaryCampaign ? primaryCampaign.goal : "Activate a campaign so the app can rank contacts and opportunities properly."}</p>
             </div>
-            <div className="today-plan-heading-actions">
-              {completedTodayIds.length > 0 && (
-                <button onClick={onResetToday}>Restore hidden</button>
-              )}
-              {todayTasks.length > 0 && (
-                <span className={`today-plan-count${urgentToday ? " urgent" : ""}`}>
-                  {urgentToday ? `${urgentToday} important` : "Plan ready"}
-                </span>
-              )}
+            <button className="button button-secondary" onClick={() => onNavigate("work")}>
+              Open campaigns <ArrowRight size={13} />
+            </button>
+          </article>
+
+          <div className="manager-health-grid">
+            <article>
+              <strong>{bookingDeals.filter((deal) => deal.status !== "confirmed" && deal.status !== "passed").length}</strong>
+              <span>open deals</span>
+            </article>
+            <article>
+              <strong>{routeGaps.length}</strong>
+              <span>route gaps</span>
+            </article>
+            <article>
+              <strong>{suggestedCampaigns.length}</strong>
+              <span>need review</span>
+            </article>
+          </div>
+
+          <article className="panel manager-modules-card">
+            <div className="overview-card-heading">
+              <div><span className="eyebrow">Modules</span><h3>Where to go next</h3></div>
             </div>
-          </div>
-          <div className="today-plan-list">
-            {todayTasks.map((task) => (
-              <TodayTaskRow
-                key={task.id}
-                task={task}
-                onAction={() => {
-                  if (task.kind === "follow-up" && task.contactId) {
-                    onEmail(task.contactId);
-                  } else if (task.kind === "relationship" && task.contactId) {
-                    onSelect(task.contactId);
-                  } else {
-                    onNavigate(task.actionView);
-                  }
-                }}
-                onComplete={() => onCompleteToday(task.id)}
-              />
-            ))}
-            {!todayTasks.length && (
-              <div className="today-plan-empty">
-                <span><Check size={19} /></span>
-                <div><strong>Nothing urgent is waiting.</strong><small>Use the shortcuts when you’re ready to build momentum.</small></div>
-              </div>
-            )}
-          </div>
-        </article>
+            <div className="manager-module-list">
+              {moduleCards.map(({ title, copy, icon: Icon, view, stat }) => (
+                <button key={title} onClick={() => onNavigate(view)}>
+                  <span><Icon size={16} /></span>
+                  <div><strong>{title}</strong><small>{copy}</small></div>
+                  <b>{stat}</b>
+                </button>
+              ))}
+            </div>
+          </article>
+        </aside>
       </div>
+
+      {activeAction && (
+        <TodayActionPanel
+          action={activeAction}
+          deal={activeAction.dealId ? bookingDeals.find((deal) => deal.id === activeAction.dealId) : undefined}
+          contact={activeAction.contactId ? contacts.find((contact) => contact.id === activeAction.contactId) : undefined}
+          opportunity={activeAction.opportunityId ? opportunities.find((opportunity) => opportunity.id === activeAction.opportunityId) : undefined}
+          campaign={activeAction.campaignId ? campaigns.find((campaign) => campaign.id === activeAction.campaignId) : primaryCampaign}
+          onClose={() => setActiveAction(null)}
+          onNavigate={(view) => {
+            setActiveAction(null);
+            onNavigate(view);
+          }}
+          onSelect={(id) => {
+            setActiveAction(null);
+            onSelect(id);
+          }}
+          onEmail={(id) => {
+            setActiveAction(null);
+            onEmail(id);
+          }}
+        />
+      )}
 
     </section>
   );
 }
 
-function TodayTaskRow({
-  task,
+function TodayActionPanel({
+  action,
+  deal,
+  contact,
+  opportunity,
+  campaign,
+  onClose,
+  onNavigate,
+  onSelect,
+  onEmail,
+}: {
+  action: ManagerAction;
+  deal?: BookingDeal;
+  contact?: Contact;
+  opportunity?: ResearchOpportunity;
+  campaign?: Campaign;
+  onClose: () => void;
+  onNavigate: (view: AppView) => void;
+  onSelect: (id: string) => void;
+  onEmail: (id: string) => void;
+}) {
+  return (
+    <aside className="today-action-panel" aria-label="Today action details">
+      <div className="today-action-panel-head">
+        <div>
+          <span className="eyebrow">Action detail</span>
+          <h3>{action.title}</h3>
+        </div>
+        <button type="button" className="icon-button" onClick={onClose} aria-label="Close action detail"><X size={18} /></button>
+      </div>
+      <div className="today-action-panel-body">
+        <section>
+          <small>Why this matters</small>
+          <p>{action.reason}</p>
+          <strong>{action.detail}</strong>
+        </section>
+        {deal && (
+          <section>
+            <small>Booking deal</small>
+            <h4>{deal.title}</h4>
+            <dl>
+              <div><dt>Status</dt><dd>{deal.status.replaceAll("_", " ")}</dd></div>
+              <div><dt>Value</dt><dd>{formatMoney(deal.projectedValue || deal.targetFee || 0)}</dd></div>
+              <div><dt>Place</dt><dd>{[deal.city, deal.country].filter(Boolean).join(", ") || "Not set"}</dd></div>
+              <div><dt>Pitch blockers</dt><dd>{deal.missingMaterials.length ? deal.missingMaterials.join(", ") : "None"}</dd></div>
+            </dl>
+          </section>
+        )}
+        {contact && (
+          <section>
+            <small>Person</small>
+            <h4>{contactLabel(contact)}</h4>
+            <p>{contact.company} · {contact.city}{contact.country ? `, ${contact.country}` : ""}</p>
+            <strong>{contact.recommended_next_action || "Choose the next relationship move."}</strong>
+          </section>
+        )}
+        {opportunity && (
+          <section>
+            <small>Opportunity</small>
+            <h4>{opportunity.title}</h4>
+            <p>{opportunity.organisation} · {opportunity.confidence}% fit</p>
+            <strong>{opportunity.nextAction}</strong>
+          </section>
+        )}
+        {campaign && (
+          <section>
+            <small>Campaign</small>
+            <h4>{campaign.name}</h4>
+            <p>{campaign.goal}</p>
+          </section>
+        )}
+      </div>
+      <div className="today-action-panel-actions">
+        {contact && <button type="button" className="button button-primary" onClick={() => onEmail(contact.id)}><Mail size={14} /> Draft email</button>}
+        {contact && <button type="button" className="button button-secondary" onClick={() => onSelect(contact.id)}><Users size={14} /> Open person</button>}
+        <button type="button" className="button button-ghost" onClick={() => onNavigate(action.targetView)}>
+          Open module <ArrowRight size={13} />
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function ManagerActionRow({
+  action,
+  index,
   onAction,
   onComplete,
 }: {
-  task: TodayTask;
+  action: ManagerAction;
+  index: number;
   onAction: () => void;
   onComplete: () => void;
 }) {
-  const icons = {
-    "follow-up": Mail,
+  const icons: Record<ManagerAction["type"], typeof Check> = {
+    confirm: Check,
+    deal: CircleDollarSign,
     opportunity: ScanSearch,
+    "follow-up": Mail,
+    material: Sparkles,
+    route: Route,
     relationship: Users,
-    profile: Sparkles,
   };
-  const Icon = icons[task.kind];
+  const Icon = icons[action.type];
   return (
-    <div className={`today-task${task.priority === "High" ? " important" : ""}`}>
-      <span className={`today-task-icon ${task.kind}`}><Icon size={16} /></span>
-      <div className="today-task-copy">
+    <div className={`manager-action-row priority-${Math.min(5, Math.max(1, action.urgency))}`}>
+      <span className="manager-action-number">{String(index + 1).padStart(2, "0")}</span>
+      <span className={`manager-action-icon ${action.type}`}><Icon size={16} /></span>
+      <div className="manager-action-copy">
         <span>
-          <strong>{task.title}</strong>
-          {task.priority === "High" && <b>Important</b>}
+          <strong>{action.title}</strong>
+          {action.relatedLabel && <b>{action.relatedLabel}</b>}
         </span>
-        <small>{task.body}</small>
+        <p>{action.reason}</p>
+        <small>{action.detail}</small>
       </div>
-      <div className="today-task-actions">
-        <button className="button button-secondary" onClick={onAction}>{task.actionLabel} <ArrowRight size={12} /></button>
-        <button className="today-task-done" onClick={onComplete} title="Hide this item until tomorrow"><Check size={13} /> Done for today</button>
+      <div className="manager-action-actions">
+        <button type="button" className="button button-primary" onMouseDown={onAction} onClick={onAction}>
+          {action.primaryActionLabel} <ArrowRight size={12} />
+        </button>
+        <button type="button" className="today-task-done" onClick={onComplete} title="Hide this move for now">
+          <Check size={13} /> Done
+        </button>
       </div>
     </div>
   );
 }
 
+function CalendarWorkspace({
+  contacts,
+  campaigns,
+  deals,
+  opportunities,
+  onNavigate,
+}: {
+  contacts: Contact[];
+  campaigns: Campaign[];
+  deals: BookingDeal[];
+  opportunities: ResearchOpportunity[];
+  onNavigate: (view: AppView) => void;
+}) {
+  const today = TODAY();
+  const routeItems = campaigns.flatMap((campaign) =>
+    campaign.routeStops.map((stop) => ({
+      id: `${campaign.id}-${stop.id}`,
+      kind: stop.status,
+      title: stop.venue || `${stop.city || "Open route window"}${stop.country ? `, ${stop.country}` : ""}`,
+      detail: campaign.name,
+      date: stop.startDate || campaign.startDate,
+      secondaryDate: stop.endDate,
+    })),
+  );
+  const followUpItems = [
+    ...deals
+      .filter((deal) => deal.followUpDate)
+      .map((deal) => ({
+        id: `deal-${deal.id}`,
+        kind: "Follow-up",
+        title: deal.title,
+        detail: deal.nextStep,
+        date: deal.followUpDate || "",
+        secondaryDate: "",
+      })),
+    ...contacts
+      .filter((contact) => contact.next_follow_up_date)
+      .map((contact) => ({
+        id: `contact-${contact.id}`,
+        kind: "Follow-up",
+        title: contactLabel(contact),
+        detail: contact.recommended_next_action || contact.company,
+        date: contact.next_follow_up_date,
+        secondaryDate: "",
+      })),
+  ];
+  const deadlineItems = opportunities
+    .filter((opportunity) => opportunity.deadline)
+    .map((opportunity) => ({
+      id: `opportunity-${opportunity.id}`,
+      kind: "Deadline",
+      title: opportunity.title,
+      detail: opportunity.organisation,
+      date: opportunity.deadline,
+      secondaryDate: "",
+    }));
+  const items = [...routeItems, ...followUpItems, ...deadlineItems]
+    .filter((item) => item.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const upcoming = items.filter((item) => item.date >= today).slice(0, 10);
+  const routeGaps = campaigns.flatMap((campaign) =>
+    campaign.routeStops
+      .filter((stop) => stop.status === "Available")
+      .map((stop) => ({ ...stop, campaignName: campaign.name })),
+  );
+
+  return (
+    <section className="simple-module-workspace">
+      <div className="simple-module-hero">
+        <div>
+          <span className="eyebrow">Calendar</span>
+          <h2>Dates and route gaps in one place.</h2>
+          <p>Confirmed dates, pending windows, deal follow-ups, and application deadlines without spreadsheet hunting.</p>
+        </div>
+        <button className="button button-primary" onClick={() => onNavigate("work")}>Edit campaigns <ArrowRight size={13} /></button>
+      </div>
+      <div className="simple-stat-grid">
+        <article><strong>{routeItems.filter((item) => item.kind === "Confirmed").length}</strong><span>confirmed dates</span></article>
+        <article><strong>{routeItems.filter((item) => item.kind === "Tentative").length}</strong><span>tentative dates</span></article>
+        <article><strong>{routeGaps.length}</strong><span>route gaps</span></article>
+        <article><strong>{followUpItems.filter((item) => item.date <= today).length}</strong><span>follow-ups due</span></article>
+      </div>
+      <div className="simple-module-grid">
+        <article className="panel simple-list-card">
+          <div className="simple-card-heading"><CalendarClock size={16} /><span><strong>Upcoming</strong><small>Next dates and deadlines</small></span></div>
+          {upcoming.map((item) => (
+            <div className="simple-list-row" key={item.id}>
+              <time>{formatDate(item.date)}</time>
+              <span><strong>{item.title}</strong><small>{item.kind} · {item.detail}</small></span>
+            </div>
+          ))}
+          {!upcoming.length && <p>No upcoming dates recorded yet.</p>}
+        </article>
+        <article className="panel simple-list-card">
+          <div className="simple-card-heading"><Route size={16} /><span><strong>Route gaps</strong><small>Open windows that need prospects</small></span></div>
+          {routeGaps.slice(0, 8).map((gap) => (
+            <div className="simple-list-row" key={gap.id}>
+              <time>{formatDate(gap.startDate)}</time>
+              <span><strong>{gap.city || "Open window"}</strong><small>{gap.campaignName} · {formatDate(gap.endDate)}</small></span>
+            </div>
+          ))}
+          {!routeGaps.length && <p>No open route gaps recorded.</p>}
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function IncomeWorkspace({
+  campaigns,
+  deals,
+  workspace,
+  onNavigate,
+}: {
+  campaigns: Campaign[];
+  deals: BookingDeal[];
+  workspace: ArtistWorkspace;
+  onNavigate: (view: AppView) => void;
+}) {
+  const summary = summarizeBookingDeals(deals, campaigns);
+  const campaignRows = campaigns.map((campaign) => {
+    const campaignDeals = deals.filter((deal) => deal.campaignId === campaign.id);
+    const confirmed = campaignDeals
+      .filter((deal) => deal.status === "confirmed")
+      .reduce((sum, deal) => sum + (deal.confirmedValue || deal.targetFee || 0), 0);
+    const projected = campaignDeals
+      .filter((deal) => deal.status !== "confirmed" && deal.status !== "passed")
+      .reduce((sum, deal) => sum + (deal.projectedValue || 0), 0);
+    const costs = campaign.expenses.reduce((sum, expense) => sum + Number(expense.amount.replace(/[^0-9.-]/g, "")) || sum, 0);
+    return { campaign, confirmed, projected, costs, balance: confirmed + projected - costs };
+  });
+
+  return (
+    <section className="simple-module-workspace">
+      <div className="simple-module-hero">
+        <div>
+          <span className="eyebrow">Income</span>
+          <h2>Know what is booked, likely, and missing.</h2>
+          <p>Use recorded deals and campaign costs to see where each route stands before committing more outreach.</p>
+        </div>
+        <button className="button button-primary" onClick={() => onNavigate("deals")}>Work deals <ArrowRight size={13} /></button>
+      </div>
+      <div className="simple-stat-grid">
+        <article><strong>{formatMoney(summary.confirmedIncome, workspace.defaultCurrency)}</strong><span>confirmed</span></article>
+        <article><strong>{formatMoney(summary.projectedIncome, workspace.defaultCurrency)}</strong><span>projected</span></article>
+        <article><strong>{formatMoney(summary.openDealValue, workspace.defaultCurrency)}</strong><span>open value</span></article>
+        <article><strong>{summary.highestValueDeals.length}</strong><span>priority deals</span></article>
+      </div>
+      <article className="panel income-table-card">
+        <div className="simple-card-heading"><ChartBar size={16} /><span><strong>Campaign break-even</strong><small>Recorded estimates only</small></span></div>
+        <div className="income-table">
+          {campaignRows.map(({ campaign, confirmed, projected, costs, balance }) => (
+            <div className="income-row" key={campaign.id}>
+              <span><strong>{campaign.name}</strong><small>{campaign.type}</small></span>
+              <span><small>Confirmed</small>{formatMoney(confirmed, workspace.defaultCurrency)}</span>
+              <span><small>Projected</small>{formatMoney(projected, workspace.defaultCurrency)}</span>
+              <span><small>Costs</small>{formatMoney(costs, workspace.defaultCurrency)}</span>
+              <span className={balance >= 0 ? "positive" : "negative"}><small>Balance</small>{formatMoney(Math.abs(balance), workspace.defaultCurrency)}</span>
+            </div>
+          ))}
+        </div>
+      </article>
+    </section>
+  );
+}
+
 function SettingsWorkspace({
   contacts,
+  workspace,
+  acts,
+  assets,
+  campaigns,
+  opportunities,
+  onWorkspaceChange,
+  onActsChange,
+  onAssetsChange,
   onSelectContact,
   onReset,
   onExportWorkspace,
@@ -1615,6 +2138,14 @@ function SettingsWorkspace({
   onExportCsv,
 }: {
   contacts: Contact[];
+  workspace: ArtistWorkspace;
+  acts: ActProfile[];
+  assets: ArtistAsset[];
+  campaigns: Campaign[];
+  opportunities: ResearchOpportunity[];
+  onWorkspaceChange: (workspace: ArtistWorkspace) => void;
+  onActsChange: (acts: ActProfile[]) => void;
+  onAssetsChange: (assets: ArtistAsset[]) => void;
   onSelectContact: (id: string) => void;
   onReset: () => void;
   onExportWorkspace: () => void;
@@ -1622,11 +2153,14 @@ function SettingsWorkspace({
   onExportJson: () => void;
   onExportCsv: () => void;
 }) {
-  const [tab, setTab] = useState<"quality" | "data">("quality");
+  const [tab, setTab] = useState<"portfolio" | "quality" | "data">("portfolio");
   const [importError, setImportError] = useState("");
   return (
     <section className="settings-workspace">
-      <div className="hub-tabs" role="tablist" aria-label="Settings">
+      <div className="hub-tabs" role="tablist" aria-label="Setup">
+        <button className={tab === "portfolio" ? "active" : ""} onClick={() => setTab("portfolio")}>
+          <Music2 size={15} /> Portfolio & assets
+        </button>
         <button className={tab === "quality" ? "active" : ""} onClick={() => setTab("quality")}>
           <Check size={15} /> Data quality
         </button>
@@ -1634,7 +2168,17 @@ function SettingsWorkspace({
           <Download size={15} /> Backups & automation
         </button>
       </div>
-      {tab === "quality" ? (
+      {tab === "portfolio" ? (
+        <PortfolioSettings
+          workspace={workspace}
+          acts={acts}
+          assets={assets}
+          campaigns={campaigns}
+          onWorkspaceChange={onWorkspaceChange}
+          onActsChange={onActsChange}
+          onAssetsChange={onAssetsChange}
+        />
+      ) : tab === "quality" ? (
         <>
           <PageGuide text="Improve the details that have the greatest practical effect on outreach and follow-up." />
           <DataReadinessPanel contacts={contacts} onSelect={onSelectContact} />
@@ -1695,8 +2239,195 @@ function SettingsWorkspace({
             </article>
           </div>
           <AutomationBlueprint />
+          <IntegrationPanel
+            contacts={contacts}
+            acts={acts}
+            assets={assets}
+            campaigns={campaigns}
+            opportunities={opportunities}
+          />
         </>
       )}
+    </section>
+  );
+}
+
+function IntegrationPanel({
+  contacts,
+  acts,
+  assets,
+  campaigns,
+  opportunities,
+}: {
+  contacts: Contact[];
+  acts: ActProfile[];
+  assets: ArtistAsset[];
+  campaigns: Campaign[];
+  opportunities: ResearchOpportunity[];
+}) {
+  const [status, setStatus] = useState<{
+    airtable: boolean;
+    make: boolean;
+    googleCalendar: boolean;
+    gmailMode: string;
+  } | null>(null);
+  const [message, setMessage] = useState("");
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/integrations/status")
+      .then((response) => response.json())
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, []);
+
+  const sync = async () => {
+    setSyncing(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/airtable/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contacts, acts, assets, campaigns, opportunities }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Airtable sync failed.");
+      setMessage(`Synced ${Object.values(payload.counts as Record<string, number>).reduce((sum, value) => sum + value, 0)} operational records to Airtable.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Airtable sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <section className="panel integration-panel">
+      <div className="campaign-section-heading">
+        <div><Zap size={16} /><span><strong>Connected workflow</strong><small>Airtable holds operations; Gmail remains drafts-only.</small></span></div>
+      </div>
+      <div className="integration-status-grid">
+        <article className={status?.airtable ? "ready" : ""}><span>Airtable</span><strong>{status?.airtable ? "Connected" : "Needs keys"}</strong><small>Acts, campaigns, assets and opportunities</small></article>
+        <article className={status?.make ? "ready" : ""}><span>Make</span><strong>{status?.make ? "Connected" : "Not connected"}</strong><small>Controlled automation hand-offs</small></article>
+        <article className={status?.googleCalendar ? "ready" : ""}><span>Calendar</span><strong>{status?.googleCalendar ? "Configured" : "Not configured"}</strong><small>Shows, deadlines and follow-ups</small></article>
+        <article className="ready"><span>Gmail</span><strong>Drafts only</strong><small>Nothing is ever auto-sent</small></article>
+      </div>
+      <div className="integration-actions">
+        <button className="button button-primary" onClick={sync} disabled={!status?.airtable || syncing}>
+          <RefreshCcw size={14} className={syncing ? "spin" : ""} /> {syncing ? "Syncing..." : "Sync operational data"}
+        </button>
+        <span>Private raw notes and unapproved drafts are excluded.</span>
+      </div>
+      {message && <div className="scout-message"><Check size={14} /><span>{message}</span></div>}
+    </section>
+  );
+}
+
+function PortfolioSettings({
+  workspace,
+  acts,
+  assets,
+  campaigns,
+  onWorkspaceChange,
+  onActsChange,
+  onAssetsChange,
+}: {
+  workspace: ArtistWorkspace;
+  acts: ActProfile[];
+  assets: ArtistAsset[];
+  campaigns: Campaign[];
+  onWorkspaceChange: (workspace: ArtistWorkspace) => void;
+  onActsChange: (acts: ActProfile[]) => void;
+  onAssetsChange: (assets: ArtistAsset[]) => void;
+}) {
+  const [selectedActId, setSelectedActId] = useState(acts[0]?.id || "");
+  const [budgetSnapshot, setBudgetSnapshot] = useState<{
+    limitUsd: number;
+    usedUsd: number;
+    remainingUsd: number;
+  } | null>(null);
+  useEffect(() => {
+    fetch("/api/ai-budget")
+      .then((response) => response.json())
+      .then((payload) => setBudgetSnapshot(payload))
+      .catch(() => setBudgetSnapshot(null));
+  }, []);
+  const act = acts.find((item) => item.id === selectedActId) || acts[0];
+  if (!act) return null;
+  const updateAct = (patch: Partial<ActProfile>) =>
+    onActsChange(acts.map((item) => item.id === act.id ? { ...item, ...patch } : item));
+  const actAssets = assets.filter((asset) => asset.actId === act.id);
+
+  return (
+    <section className="portfolio-settings">
+      <div className="portfolio-settings-intro">
+        <div>
+          <span className="eyebrow">Hamed's portfolio</span>
+          <h2>One career, several distinct artistic products.</h2>
+          <p>Edit any public-site detail before it is used in outreach. Website-sourced information is labelled rather than silently treated as fact.</p>
+        </div>
+        <div className="ai-budget-card">
+          <span><Sparkles size={17} /></span>
+          <div>
+            <small>AI budget remaining</small>
+            <strong>US${(budgetSnapshot?.remainingUsd ?? workspace.monthlyAiBudgetUsd).toFixed(2)}</strong>
+            {budgetSnapshot && <small>US${budgetSnapshot.usedUsd.toFixed(2)} used of US${budgetSnapshot.limitUsd.toFixed(2)}</small>}
+          </div>
+          <span className="source-pill network"><Check size={12} /> Hard stop</span>
+        </div>
+      </div>
+      <div className="portfolio-settings-layout">
+        <aside className="portfolio-act-list">
+          {acts.map((item) => (
+            <button key={item.id} className={item.id === act.id ? "active" : ""} onClick={() => setSelectedActId(item.id)}>
+              <span>{item.name.slice(0, 1)}</span>
+              <span><strong>{item.name}</strong><small>{campaigns.filter((campaign) => campaign.actId === item.id).length} campaigns</small></span>
+            </button>
+          ))}
+        </aside>
+        <article className="panel portfolio-editor">
+          <div className="portfolio-editor-head">
+            <div><span className="source-pill web"><Globe2 size={12} /> Website sourced</span><h3>{act.name}</h3></div>
+            <a href={act.sourceUrl} target="_blank" rel="noreferrer">View source <ExternalLink size={12} /></a>
+          </div>
+          <div className="profile-form-grid">
+            <label className="profile-field"><span>Act name</span><input value={act.name} onChange={(event) => updateAct({ name: event.target.value })} /></label>
+            <label className="profile-field"><span>Format</span><input value={act.format} onChange={(event) => updateAct({ format: event.target.value })} /></label>
+            <label className="profile-field wide"><span>Genre and positioning</span><textarea rows={2} value={act.genres} onChange={(event) => updateAct({ genres: event.target.value })} /></label>
+            <label className="profile-field wide"><span>One-line pitch</span><textarea rows={2} value={act.oneLinePitch} onChange={(event) => updateAct({ oneLinePitch: event.target.value })} /></label>
+            <label className="profile-field wide"><span>Biography</span><textarea rows={5} value={act.shortBio} onChange={(event) => updateAct({ shortBio: event.target.value })} /></label>
+          </div>
+          <label className="portfolio-confirm">
+            <input type="checkbox" checked={act.confirmed} onChange={(event) => updateAct({ confirmed: event.target.checked })} />
+            <span><strong>Hamed has reviewed these facts</strong><small>Confirmed copy can be used confidently in generated drafts.</small></span>
+          </label>
+          <div className="portfolio-assets">
+            <div className="campaign-section-heading"><div><FileJson size={16} /><span><strong>Saved materials</strong><small>{actAssets.length} currently attached</small></span></div></div>
+            {actAssets.map((asset) => (
+              <label key={asset.id}>
+                <select value={asset.kind} onChange={(event) => onAssetsChange(assets.map((item) => item.id === asset.id ? { ...item, kind: event.target.value as ArtistAsset["kind"] } : item))}>
+                  <option>Website</option><option>EPK</option><option>Biography</option><option>Music</option><option>Live video</option><option>Press quote</option><option>Technical rider</option>
+                </select>
+                <input value={asset.label} onChange={(event) => onAssetsChange(assets.map((item) => item.id === asset.id ? { ...item, label: event.target.value } : item))} />
+                <input value={asset.value} onChange={(event) => onAssetsChange(assets.map((item) => item.id === asset.id ? { ...item, value: event.target.value } : item))} />
+              </label>
+            ))}
+            <button
+              className="button button-secondary"
+              onClick={() => onAssetsChange([...assets, {
+                id: `ASSET-${Date.now()}`,
+                actId: act.id,
+                kind: "EPK",
+                label: "New material",
+                value: "",
+                source: "user",
+                verified: false,
+              }])}
+            >
+              <Plus size={14} /> Add material
+            </button>
+          </div>
+        </article>
+      </div>
     </section>
   );
 }

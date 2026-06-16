@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOpenAIClient, getOpenAIModel } from "@/lib/openai";
 import { ArtistProfile, Contact, EmailIntent } from "@/lib/types";
+import { cacheAiResponse, makeAiCacheKey, reserveAiBudget } from "@/lib/ai-budget";
 
 export async function POST(request: Request) {
   const client = getOpenAIClient();
@@ -14,6 +15,12 @@ export async function POST(request: Request) {
   if (!body.contact || !body.intent) {
     return NextResponse.json({ error: "Contact and intent are required." }, { status: 400 });
   }
+  const cacheKey = makeAiCacheKey("generate-email", body);
+  const reservation = await reserveAiBudget({ feature: "generate-email", estimatedCostUsd: 0.05, cacheKey });
+  if (!reservation.allowed) {
+    return NextResponse.json({ available: false, budgetBlocked: true, budget: reservation.budget });
+  }
+  if (reservation.cachedPayload) return NextResponse.json(reservation.cachedPayload);
 
   try {
     const response = await client.responses.create({
@@ -54,7 +61,9 @@ export async function POST(request: Request) {
         },
       },
     });
-    return NextResponse.json({ available: true, draft: JSON.parse(response.output_text) });
+    const payload = { available: true, draft: JSON.parse(response.output_text), budget: reservation.budget };
+    await cacheAiResponse(cacheKey, payload);
+    return NextResponse.json(payload);
   } catch (error) {
     console.error("Email generation failed", error);
     return NextResponse.json({ available: true, error: "AI request failed." }, { status: 502 });

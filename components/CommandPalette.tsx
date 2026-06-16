@@ -2,9 +2,13 @@
 
 import {
   ArrowRight,
+  CalendarClock,
+  CircleDollarSign,
+  ChartBar,
   FolderKanban,
   Home,
   Search,
+  Radio,
   ScanSearch,
   Users,
   WandSparkles,
@@ -34,10 +38,13 @@ const destinations: Array<{
   icon: typeof Search;
 }> = [
   { view: "home", title: "Today", detail: "Priorities and manager briefing", icon: Home },
-  { view: "work", title: "Projects", detail: "Tours, releases, campaigns, and tasks", icon: FolderKanban },
-  { view: "relationships", title: "Relationships", detail: "Follow-ups, pipeline, and contacts", icon: Users },
-  { view: "discover", title: "Opportunities", detail: "Research, network map, and Ask AI", icon: ScanSearch },
-  { view: "studio", title: "Studio", detail: "Pitches, creative material, and artist profile", icon: WandSparkles },
+  { view: "deals", title: "Deals", detail: "Booking pipeline, fees, follow-ups, and pitch readiness", icon: CircleDollarSign },
+  { view: "work", title: "Campaigns", detail: "Tours, releases, campaigns, and tasks", icon: FolderKanban },
+  { view: "relationships", title: "People", detail: "Follow-ups, pipeline, and contacts", icon: Users },
+  { view: "studio", title: "Pitch Room", detail: "Pitches, creative material, and artist profile", icon: WandSparkles },
+  { view: "calendar", title: "Calendar", detail: "Dates, follow-ups, deadlines, and route gaps", icon: CalendarClock },
+  { view: "radar", title: "Radar", detail: "Opportunity scanner and warm paths", icon: Radio },
+  { view: "income", title: "Income", detail: "Fees, projections, and break-even", icon: ChartBar },
 ];
 
 function includesQuery(values: string[], query: string): boolean {
@@ -171,7 +178,7 @@ export default function CommandPalette({
       .forEach((opportunity) =>
         items.push({
           id: `opportunity-${opportunity.id}`,
-          group: "Opportunities",
+          group: "Find Work",
           title: opportunity.title,
           detail: `${opportunity.organisation} · ${opportunity.confidence}% fit`,
           icon: ScanSearch,

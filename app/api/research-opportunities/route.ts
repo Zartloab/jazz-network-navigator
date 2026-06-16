@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOpenAIClient, getOpenAIModel } from "@/lib/openai";
 import { OpportunityType, ResearchBrief, ResearchOpportunity } from "@/lib/types";
+import { cacheAiResponse, makeAiCacheKey, reserveAiBudget } from "@/lib/ai-budget";
 
 type WebOpportunity = {
   title: string;
@@ -36,10 +37,27 @@ export async function POST(request: Request) {
       countries?: string[];
       categories?: string[];
     };
+    campaign?: {
+      name?: string;
+      type?: string;
+      goal?: string;
+      regions?: string[];
+      dates?: string[];
+      ensembleSize?: number;
+      minimumFee?: string;
+      routeStops?: unknown[];
+      availableAssets?: string[];
+    };
   };
   if (!body.brief) {
     return NextResponse.json({ error: "A research brief is required." }, { status: 400 });
   }
+  const cacheKey = makeAiCacheKey("research-opportunities", body);
+  const reservation = await reserveAiBudget({ feature: "research-opportunities", estimatedCostUsd: 0.75, cacheKey });
+  if (!reservation.allowed) {
+    return NextResponse.json({ available: false, budgetBlocked: true, budget: reservation.budget });
+  }
+  if (reservation.cachedPayload) return NextResponse.json(reservation.cachedPayload);
 
   try {
     const controller = new AbortController();
@@ -55,6 +73,7 @@ export async function POST(request: Request) {
           "You are a careful music-industry opportunity researcher. Perform one focused search of current official sources for legitimate festivals, showcases, grants, venue calls, press opportunities, conferences, residencies, or collaboration programs relevant to the brief. Return no more than three strong opportunities, each supported by a direct official source page. Never invent a deadline, fee, eligibility rule, or contact. Use an empty string when a deadline is not stated. Prefer quality over quantity and keep recommendations practical for an independent artist or manager.",
         input: JSON.stringify({
           research_brief: body.brief,
+          campaign: body.campaign || {},
           existing_network_coverage: body.networkSummary || {},
           requested_output:
             "Find up to 3 current opportunities. Explain why each fits, give one next action, and include the direct official source URL.",
@@ -139,7 +158,9 @@ export async function POST(request: Request) {
         status: "New",
       }));
 
-    return NextResponse.json({ available: true, opportunities });
+    const payload = { available: true, opportunities, budget: reservation.budget };
+    await cacheAiResponse(cacheKey, payload);
+    return NextResponse.json(payload);
   } catch (error) {
     console.error("Opportunity research failed", error);
     return NextResponse.json(

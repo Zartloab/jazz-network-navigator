@@ -8,6 +8,7 @@ import {
   CircleDot,
   Clock3,
   ExternalLink,
+  Filter,
   FolderKanban,
   Globe2,
   Lightbulb,
@@ -27,13 +28,17 @@ import {
 } from "@/lib/opportunity-scout";
 import {
   ArtistProfile,
+  ActProfile,
+  ArtistAsset,
+  ArtistWorkspace,
+  Campaign,
   Contact,
   OpportunityStatus,
   OpportunityType,
   ResearchBrief,
   ResearchOpportunity,
-  WorkProject,
 } from "@/lib/types";
+import { actToArtistProfile } from "@/lib/hamed-portfolio";
 
 const DEFAULT_BRIEF: ResearchBrief = {
   locations: "",
@@ -42,6 +47,7 @@ const DEFAULT_BRIEF: ResearchBrief = {
   notes: "",
 };
 const BRIEF_STORAGE_KEY = "jazz-network-navigator-research-brief-v1";
+const WEEKLY_SCAN_STORAGE_KEY = "jazz-network-navigator-weekly-scans-v1";
 
 const filters: Array<OpportunityStatus | "All"> = ["New", "Saved", "In progress", "All"];
 
@@ -71,17 +77,28 @@ export default function OpportunityScout({
   opportunities,
   onChange,
   onSelectContact,
-  projects,
-  onProjectsChange,
+  campaigns,
+  onCampaignsChange,
+  acts,
+  assets,
+  workspace,
 }: {
   contacts: Contact[];
   profile: ArtistProfile;
   opportunities: ResearchOpportunity[];
   onChange: (opportunities: ResearchOpportunity[]) => void;
   onSelectContact: (id: string) => void;
-  projects: WorkProject[];
-  onProjectsChange: Dispatch<SetStateAction<WorkProject[]>>;
+  campaigns: Campaign[];
+  onCampaignsChange: Dispatch<SetStateAction<Campaign[]>>;
+  acts: ActProfile[];
+  assets: ArtistAsset[];
+  workspace: ArtistWorkspace;
 }) {
+  const initialCampaignId =
+    campaigns.find((campaign) => campaign.status === "Active")?.id ||
+    campaigns[0]?.id ||
+    "";
+  const [campaignId, setCampaignId] = useState(initialCampaignId);
   const [brief, setBrief] = useState<ResearchBrief>(DEFAULT_BRIEF);
   const [filter, setFilter] = useState<(typeof filters)[number]>("New");
   const [loading, setLoading] = useState(false);
@@ -89,6 +106,12 @@ export default function OpportunityScout({
   const [message, setMessage] = useState("");
   const [visibleLimit, setVisibleLimit] = useState(6);
   const [briefHydrated, setBriefHydrated] = useState(false);
+  const [lastWeeklyScan, setLastWeeklyScan] = useState("");
+  const [briefOpen, setBriefOpen] = useState(false);
+  const campaign = campaigns.find((item) => item.id === campaignId) || campaigns[0];
+  const act = campaign ? acts.find((item) => item.id === campaign.actId) : undefined;
+  const campaignProfile =
+    campaign && act ? actToArtistProfile(workspace, act, campaign, assets) : profile;
 
   useEffect(() => {
     const stored = window.localStorage.getItem(BRIEF_STORAGE_KEY);
@@ -100,37 +123,83 @@ export default function OpportunityScout({
       }
     } else {
       setBrief({
-        locations: profile.baseCity,
-        genres: profile.genres || DEFAULT_BRIEF.genres,
-        goals: profile.careerGoals || DEFAULT_BRIEF.goals,
-        notes: profile.currentProject,
+        campaignId: campaign?.id,
+        locations: campaign?.targetRegions.join(", ") || campaignProfile.baseCity,
+        genres: campaignProfile.genres || DEFAULT_BRIEF.genres,
+        goals: campaign?.goal || campaignProfile.careerGoals || DEFAULT_BRIEF.goals,
+        notes: campaign
+          ? `${campaign.name}. ${campaign.notes} Ensemble size: ${campaign.ensembleSize}. Minimum fee: ${campaign.minimumFee || "not confirmed"}.`
+          : campaignProfile.currentProject,
       });
     }
     setBriefHydrated(true);
-  }, [profile]);
+  }, [campaign?.id]);
+
+  useEffect(() => {
+    if (!campaign || !act || !briefHydrated) return;
+    setBrief({
+      campaignId: campaign.id,
+      locations: campaign.targetRegions.join(", "),
+      genres: act.genres,
+      goals: campaign.goal,
+      notes: `${campaign.name}. ${campaign.notes} Ensemble size: ${campaign.ensembleSize}. Minimum fee: ${campaign.minimumFee || "not confirmed"}.`,
+    });
+  }, [act, briefHydrated, campaign]);
 
   useEffect(() => {
     if (briefHydrated) window.localStorage.setItem(BRIEF_STORAGE_KEY, JSON.stringify(brief));
   }, [brief, briefHydrated]);
 
+  useEffect(() => {
+    if (!campaign || !act || !briefHydrated) return;
+    let scans: Record<string, string> = {};
+    try {
+      scans = JSON.parse(window.localStorage.getItem(WEEKLY_SCAN_STORAGE_KEY) || "{}");
+    } catch {
+      scans = {};
+    }
+    const last = scans[campaign.id] || "";
+    setLastWeeklyScan(last);
+    const stale = !last || Date.now() - new Date(last).getTime() >= 7 * 24 * 60 * 60 * 1000;
+    if (!stale) return;
+    const weeklyBrief: ResearchBrief = {
+      campaignId: campaign.id,
+      locations: campaign.targetRegions.join(", "),
+      genres: act.genres,
+      goals: campaign.goal,
+      notes: campaign.notes,
+    };
+    const matches = buildLocalOpportunityScan(weeklyBrief, contacts)
+      .map((opportunity) => ({ ...opportunity, campaignId: campaign.id }))
+      .slice(0, 10);
+    onChange(mergeOpportunities(opportunities, matches, true));
+    const scannedAt = new Date().toISOString();
+    scans[campaign.id] = scannedAt;
+    window.localStorage.setItem(WEEKLY_SCAN_STORAGE_KEY, JSON.stringify(scans));
+    setLastWeeklyScan(scannedAt);
+  }, [act, briefHydrated, campaign, contacts]);
+
   const visible = useMemo(
     () =>
       opportunities
         .filter((opportunity) => opportunity.status !== "Dismissed")
+        .filter((opportunity) => !campaign || opportunity.campaignId === campaign.id)
         .filter((opportunity) => filter === "All" || opportunity.status === filter)
         .sort((a, b) => b.confidence - a.confidence),
-    [filter, opportunities],
+    [campaign, filter, opportunities],
   );
 
   const stats = useMemo(() => {
-    const active = opportunities.filter((opportunity) => opportunity.status !== "Dismissed");
+    const active = opportunities
+      .filter((opportunity) => opportunity.status !== "Dismissed")
+      .filter((opportunity) => !campaign || opportunity.campaignId === campaign.id);
     return {
       newCount: active.filter((opportunity) => opportunity.status === "New").length,
       saved: active.filter((opportunity) => opportunity.status === "Saved").length,
       live: active.filter((opportunity) => opportunity.sourceType === "web").length,
       warmPaths: active.filter((opportunity) => opportunity.contactIds.length > 0).length,
     };
-  }, [opportunities]);
+  }, [campaign, opportunities]);
 
   const updateStatus = (id: string, status: OpportunityStatus) => {
     onChange(
@@ -140,31 +209,63 @@ export default function OpportunityScout({
     );
   };
 
-  const linkToProject = (opportunityId: string, projectId: string) => {
-    onProjectsChange((current) =>
-      current.map((project) => ({
-        ...project,
+  const linkToCampaign = (opportunityId: string, nextCampaignId: string) => {
+    onCampaignsChange((current) =>
+      current.map((item) => ({
+        ...item,
         opportunityIds:
-          project.id === projectId
-            ? [...new Set([...project.opportunityIds, opportunityId])]
-            : project.opportunityIds.filter((id) => id !== opportunityId),
+          item.id === nextCampaignId
+            ? [...new Set([...item.opportunityIds, opportunityId])]
+            : item.opportunityIds.filter((id) => id !== opportunityId),
+        contactIds:
+          item.id === nextCampaignId
+            ? [
+                ...new Set([
+                  ...item.contactIds,
+                  ...(opportunities.find((opportunity) => opportunity.id === opportunityId)?.contactIds || []),
+                ]),
+              ]
+            : item.contactIds,
       })),
     );
-    if (projectId) updateStatus(opportunityId, "In progress");
+    onChange(
+      opportunities.map((opportunity) =>
+        opportunity.id === opportunityId
+          ? { ...opportunity, campaignId: nextCampaignId || undefined, status: nextCampaignId ? "In progress" : opportunity.status }
+          : opportunity,
+      ),
+    );
   };
 
   const runScan = async () => {
     setLoading(true);
     setMessage("");
     let scanMessage = "";
-    const networkMatches = buildLocalOpportunityScan(brief, contacts);
+    if (!campaign) {
+      setMessage("Choose a campaign before searching for work.");
+      setLoading(false);
+      return;
+    }
+    const campaignBrief = { ...brief, campaignId: campaign.id };
+    const networkMatches = buildLocalOpportunityScan(campaignBrief, contacts)
+      .map((opportunity) => ({ ...opportunity, campaignId: campaign.id }))
+      .slice(0, 10);
     let combined = mergeOpportunities(opportunities, networkMatches);
     let usedWeb = false;
     onChange(combined);
     setLastMode("network");
-    setMessage("Network scan complete. Checking current official sources...");
+    setMessage("Network scan complete. Review the shortlist before using paid live research.");
     setFilter("New");
     setVisibleLimit(6);
+
+    const shouldResearch = window.confirm(
+      `Use live AI research for “${campaign.name}”? This may use your OpenAI budget. Network results are already ready.`,
+    );
+    if (!shouldResearch) {
+      setMessage("Network scan ready. Live research was not used.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const controller = new AbortController();
@@ -173,17 +274,41 @@ export default function OpportunityScout({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ brief }),
+        body: JSON.stringify({
+          brief: campaignBrief,
+          campaign: {
+            name: campaign.name,
+            type: campaign.type,
+            goal: campaign.goal,
+            regions: campaign.targetRegions,
+            dates: [campaign.startDate, campaign.endDate],
+            ensembleSize: campaign.ensembleSize,
+            minimumFee: campaign.minimumFee,
+            routeStops: campaign.routeStops,
+            availableAssets: assets
+              .filter((asset) => asset.actId === campaign.actId)
+              .map((asset) => asset.kind),
+          },
+        }),
       });
       window.clearTimeout(timeout);
       const payload = (await response.json()) as {
         available?: boolean;
         opportunities?: ResearchOpportunity[];
         error?: string;
+        budgetBlocked?: boolean;
       };
       if (response.ok && payload.available && payload.opportunities?.length) {
-        combined = mergeOpportunities(combined, payload.opportunities, true);
+        combined = mergeOpportunities(
+          combined,
+          payload.opportunities
+            .map((opportunity) => ({ ...opportunity, campaignId: campaign.id }))
+            .slice(0, 10),
+          true,
+        ).slice(0, 10);
         usedWeb = true;
+      } else if (payload.budgetBlocked) {
+        scanMessage = "The monthly AI limit has been reached. Your network shortlist is ready and no paid search was made.";
       } else if (payload.error) {
         scanMessage = `${payload.error} Your network scan is still ready.`;
       }
@@ -207,11 +332,10 @@ export default function OpportunityScout({
     <section className="scout-workspace">
       <div className="scout-intro">
         <div>
-          <span className="eyebrow">Opportunity Scout</span>
-          <h2>Find the next useful opening.</h2>
+          <span className="eyebrow">Opportunity inbox</span>
+          <h2>Best openings for this campaign.</h2>
           <p>
-            Scout your network for warm routes, then check current official sources when live
-            research is available.
+            Start with the strongest matches. Adjust the search only when the campaign or route changes.
           </p>
         </div>
         <div className="scout-trust-note">
@@ -221,11 +345,40 @@ export default function OpportunityScout({
       </div>
 
       <div className="scout-layout">
-        <aside className="panel scout-brief">
+        {briefOpen && (
+          <button
+            className="scout-drawer-backdrop"
+            aria-label="Close search settings"
+            onClick={() => setBriefOpen(false)}
+          />
+        )}
+        <aside className={`panel scout-brief${briefOpen ? " open" : ""}`}>
           <div className="scout-panel-heading">
             <span className="scout-icon"><Radar size={19} /></span>
             <div><strong>What should Scout look for?</strong><small>A rough brief is enough.</small></div>
+            <button className="scout-close" onClick={() => setBriefOpen(false)} aria-label="Close search settings">
+              <X size={16} />
+            </button>
           </div>
+          <label>
+            <span>Campaign</span>
+            <select value={campaign?.id || ""} onChange={(event) => setCampaignId(event.target.value)}>
+              {campaigns.filter((item) => item.status !== "Complete").map((item) => {
+                const itemAct = acts.find((candidate) => candidate.id === item.actId);
+                return <option value={item.id} key={item.id}>{item.name} · {itemAct?.shortName}</option>;
+              })}
+            </select>
+          </label>
+          {campaign && (
+            <div className="scout-campaign-context">
+              <span className={campaign.confirmed ? "confirmed" : ""}>
+                {campaign.confirmed ? <Check size={13} /> : <Clock3 size={13} />}
+                {campaign.confirmed ? "Campaign facts confirmed" : "Review campaign facts before outreach"}
+              </span>
+              <p>{campaign.goal}</p>
+              <small>{lastWeeklyScan ? `Weekly network scan: ${formatDeadline(lastWeeklyScan)}` : "Weekly network scan not run yet"}</small>
+            </div>
+          )}
           <label>
             <span>Places</span>
             <input
@@ -289,22 +442,27 @@ export default function OpportunityScout({
               <h3>Opportunity inbox</h3>
               <p>Keep only the openings worth acting on.</p>
             </div>
-            <div className="scout-filters">
-              {filters.map((option) => (
-                <button
-                  key={option}
-                  className={filter === option ? "active" : ""}
-                  onClick={() => {
-                    setFilter(option);
-                    setVisibleLimit(6);
-                  }}
-                >
-                  {option}
-                  {option !== "All" && (
-                    <b>{opportunities.filter((item) => item.status === option).length}</b>
-                  )}
-                </button>
-              ))}
+            <div className="scout-toolbar-actions">
+              <button className="button button-secondary" onClick={() => setBriefOpen(true)}>
+                <Filter size={14} /> Adjust search
+              </button>
+              <div className="scout-filters">
+                {filters.map((option) => (
+                  <button
+                    key={option}
+                    className={filter === option ? "active" : ""}
+                    onClick={() => {
+                      setFilter(option);
+                      setVisibleLimit(6);
+                    }}
+                  >
+                    {option}
+                    {option !== "All" && (
+                      <b>{opportunities.filter((item) => item.status === option).length}</b>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -313,8 +471,10 @@ export default function OpportunityScout({
               const relatedContacts = opportunity.contactIds
                 .map((id) => contacts.find((contact) => contact.id === id))
                 .filter((contact): contact is Contact => Boolean(contact));
-              const linkedProjectId =
-                projects.find((project) => project.opportunityIds.includes(opportunity.id))?.id || "";
+              const linkedCampaignId =
+                opportunity.campaignId ||
+                campaigns.find((item) => item.opportunityIds.includes(opportunity.id))?.id ||
+                "";
               return (
                 <article className="panel scout-opportunity-card" key={opportunity.id}>
                   <div className="scout-card-topline">
@@ -371,18 +531,18 @@ export default function OpportunityScout({
                     </div>
                   )}
                   <div className="scout-card-actions">
-                    {projects.length > 0 && (
-                      <label className={`scout-project-link${linkedProjectId ? " linked" : ""}`}>
+                    {campaigns.length > 0 && (
+                      <label className={`scout-project-link${linkedCampaignId ? " linked" : ""}`}>
                         <FolderKanban size={14} />
                         <select
-                          value={linkedProjectId}
-                          onChange={(event) => linkToProject(opportunity.id, event.target.value)}
-                          aria-label={`Project for ${opportunity.title}`}
+                          value={linkedCampaignId}
+                          onChange={(event) => linkToCampaign(opportunity.id, event.target.value)}
+                          aria-label={`Campaign for ${opportunity.title}`}
                         >
-                          <option value="">Add to project...</option>
-                          {projects
-                            .filter((project) => project.status !== "Complete")
-                            .map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}
+                          <option value="">Add to campaign...</option>
+                          {campaigns
+                            .filter((item) => item.status !== "Complete")
+                            .map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
                         </select>
                       </label>
                     )}
@@ -439,8 +599,8 @@ export default function OpportunityScout({
                     : "Add a few preferences, then run Scout. It will begin with the relationships you already have."}
                 </p>
                 {!opportunities.length && (
-                  <button className="button button-secondary" onClick={runScan}>
-                    Start with my network <ArrowRight size={14} />
+                  <button className="button button-secondary" onClick={() => setBriefOpen(true)}>
+                    Adjust search brief <ArrowRight size={14} />
                   </button>
                 )}
               </div>

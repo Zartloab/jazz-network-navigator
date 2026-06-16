@@ -140,8 +140,10 @@ export type AutomationPayload = {
 
 export type AppView =
   | "home"
+  | "deals"
   | "work"
   | "relationships"
+  | "calendar"
   | "discover"
   | "tour"
   | "research"
@@ -150,6 +152,7 @@ export type AppView =
   | "directory"
   | "pipeline"
   | "radar"
+  | "income"
   | "ask"
   | "settings";
 
@@ -189,6 +192,63 @@ export type WorkDeal = {
   eventDate: string;
   notes: string;
   createdAt: string;
+};
+
+export type BookingDealType =
+  | "festival"
+  | "venue"
+  | "agent"
+  | "press"
+  | "commission"
+  | "funding"
+  | "other";
+
+export type BookingDealStatus =
+  | "lead"
+  | "pitch_ready"
+  | "contacted"
+  | "follow_up_due"
+  | "interested"
+  | "negotiating"
+  | "confirmed"
+  | "passed";
+
+export type BookingDealSource = "contact" | "opportunity" | "manual" | "demo";
+
+export type BookingDeal = {
+  id: string;
+  campaignId: string;
+  actId: string;
+  contactId?: string;
+  opportunityId?: string;
+  title: string;
+  organisation?: string;
+  city?: string;
+  country?: string;
+  dealType: BookingDealType;
+  status: BookingDealStatus;
+  targetFee?: number;
+  projectedValue?: number;
+  confirmedValue?: number;
+  dateWindow?: string;
+  nextStep: string;
+  followUpDate?: string;
+  confidenceScore: number;
+  missingMaterials: string[];
+  notes?: string;
+  source: BookingDealSource;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type BookingDealSummary = {
+  confirmedIncome: number;
+  projectedIncome: number;
+  openDealValue: number;
+  followUpsDue: number;
+  highestValueDeals: BookingDeal[];
+  routeGaps: CampaignRouteStop[];
+  mostImportantDeal?: BookingDeal;
 };
 
 export type ExpenseStatus = "Planned" | "Committed" | "Paid";
@@ -242,6 +302,7 @@ export type OpportunityType =
 export type OpportunityStatus = "New" | "Saved" | "In progress" | "Dismissed";
 
 export type ResearchBrief = {
+  campaignId?: string;
   locations: string;
   genres: string;
   goals: string;
@@ -250,6 +311,7 @@ export type ResearchBrief = {
 
 export type ResearchOpportunity = {
   id: string;
+  campaignId?: string;
   title: string;
   organisation: string;
   location: string;
@@ -292,6 +354,31 @@ export type TodayTask = {
   opportunityId?: string;
 };
 
+export type ManagerActionType =
+  | "confirm"
+  | "deal"
+  | "opportunity"
+  | "follow-up"
+  | "material"
+  | "route"
+  | "relationship";
+
+export type ManagerAction = {
+  id: string;
+  campaignId?: string;
+  type: ManagerActionType;
+  title: string;
+  reason: string;
+  detail: string;
+  primaryActionLabel: string;
+  targetView: AppView;
+  urgency: number;
+  contactId?: string;
+  opportunityId?: string;
+  dealId?: string;
+  relatedLabel?: string;
+};
+
 export type ArtistProfile = {
   artistName: string;
   projectName: string;
@@ -314,9 +401,13 @@ export type CreativeGoal =
   | "Festival application"
   | "Press story"
   | "Release campaign"
-  | "Collaboration idea";
+  | "Collaboration idea"
+  | "Composer commission"
+  | "Funding introduction";
 
 export type CreativeBrief = {
+  campaignId?: string;
+  actId?: string;
   goal: CreativeGoal;
   audience: string;
   tone: "Warm" | "Direct" | "Bold" | "Thoughtful";
@@ -336,4 +427,112 @@ export type CreativePack = {
   storyAngles: string[];
   callsToAction: string[];
   contentIdeas: string[];
+  campaignId?: string;
+  actId?: string;
+  approvalStatus?: "Draft" | "Approved" | "Skipped";
+  gmailDraftId?: string;
+};
+
+export type SourceProvenance = "website" | "user" | "imported";
+
+export type ArtistWorkspace = {
+  id: string;
+  ownerName: string;
+  businessName: string;
+  baseCity: string;
+  timezone: string;
+  signatureName: string;
+  defaultCurrency: string;
+  monthlyAiBudgetUsd: number;
+};
+
+export type AssetKind =
+  | "Website"
+  | "EPK"
+  | "Biography"
+  | "Music"
+  | "Live video"
+  | "Press quote"
+  | "Technical rider";
+
+export type ArtistAsset = {
+  id: string;
+  actId: string;
+  kind: AssetKind;
+  label: string;
+  value: string;
+  source: SourceProvenance;
+  verified: boolean;
+};
+
+export type ActProfile = {
+  id: string;
+  name: string;
+  shortName: string;
+  format: string;
+  genres: string;
+  baseCity: string;
+  oneLinePitch: string;
+  shortBio: string;
+  achievements: string[];
+  websiteUrl: string;
+  source: SourceProvenance;
+  sourceUrl: string;
+  confirmed: boolean;
+};
+
+export type CampaignType =
+  | "Tour"
+  | "Release"
+  | "Bookings"
+  | "Commissions"
+  | "Funding";
+
+export type CampaignStatus = "Suggested" | "Active" | "Paused" | "Complete";
+
+export type RouteStopStatus = "Confirmed" | "Tentative" | "Available";
+
+export type CampaignRouteStop = {
+  id: string;
+  city: string;
+  country: string;
+  startDate: string;
+  endDate: string;
+  status: RouteStopStatus;
+  venue: string;
+  notes: string;
+};
+
+export type Campaign = {
+  id: string;
+  actId: string;
+  name: string;
+  type: CampaignType;
+  status: CampaignStatus;
+  goal: string;
+  startDate: string;
+  endDate: string;
+  targetRegions: string[];
+  minimumFee: string;
+  ensembleSize: number;
+  notes: string;
+  source: SourceProvenance;
+  confirmed: boolean;
+  contactIds: string[];
+  opportunityIds: string[];
+  tasks: WorkTask[];
+  deals: WorkDeal[];
+  expenses: WorkExpense[];
+  routeStops: CampaignRouteStop[];
+  requiredAssetKinds: AssetKind[];
+  createdAt: string;
+};
+
+export type AIUsageRecord = {
+  id: string;
+  feature: string;
+  estimatedCostUsd: number;
+  createdAt: string;
+  cacheKey: string;
+  status: "used" | "cached" | "blocked";
 };

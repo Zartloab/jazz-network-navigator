@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOpenAIClient, getOpenAIModel } from "@/lib/openai";
 import { ArtistProfile, Contact, TourBrief, TourDraft } from "@/lib/types";
+import { cacheAiResponse, makeAiCacheKey, reserveAiBudget } from "@/lib/ai-budget";
 
 type DraftRequest = {
   brief?: TourBrief;
@@ -20,6 +21,12 @@ export async function POST(request: Request) {
   if (!body.brief || !Array.isArray(body.contacts) || !body.contacts.length) {
     return NextResponse.json({ error: "Tour brief and contacts are required." }, { status: 400 });
   }
+  const cacheKey = makeAiCacheKey("tour-outreach", body);
+  const reservation = await reserveAiBudget({ feature: "tour-outreach", estimatedCostUsd: 0.25, cacheKey });
+  if (!reservation.allowed) {
+    return NextResponse.json({ available: false, budgetBlocked: true, budget: reservation.budget });
+  }
+  if (reservation.cachedPayload) return NextResponse.json(reservation.cachedPayload);
 
   const contacts = body.contacts.slice(0, 30).map(({ contact, why, suggestedAction }) => ({
     id: contact.id,
@@ -78,7 +85,9 @@ export async function POST(request: Request) {
     const parsed = JSON.parse(response.output_text) as {
       drafts: Array<TourDraft & { contactId: string }>;
     };
-    return NextResponse.json({ available: true, drafts: parsed.drafts });
+    const payload = { available: true, drafts: parsed.drafts, budget: reservation.budget };
+    await cacheAiResponse(cacheKey, payload);
+    return NextResponse.json(payload);
   } catch (error) {
     console.error("Tour outreach generation failed", error);
     return NextResponse.json({ available: true, error: "AI request failed." }, { status: 502 });

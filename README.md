@@ -1,11 +1,31 @@
-# Jazz Network Navigator
+# Hamed Artist Manager
 
-A polished local-first relationship intelligence dashboard for musicians, managers, and booking teams.
+A private, campaign-based artist management beta for Hamed Sadeghi. It brings
+tours, releases, bookings, commissions, relationships, opportunities, materials,
+drafts, deadlines, and commercial outcomes into one focused workspace.
 
-The interface is organised around five familiar jobs: **Today**, **Projects**,
-**Relationships**, **Opportunities**, and **Studio**. Related tools live inside
-those workspaces as simple tabs, so users see one task at a time. Hover or focus
-the help icons for plain-language guidance.
+The interface is organised around six familiar jobs: **Today**, **Deals**,
+**Campaigns**, **People**, **Pitch Room**, and **Setup**. Related tools live
+inside those workspaces as simple tabs or secondary actions, so users see one
+task at a time. Hover or focus the help icons for plain-language guidance.
+
+## Hamed-first portfolio
+
+The beta starts with editable, website-sourced profiles for:
+
+- Eishan Ensemble
+- Hamed Sadeghi Solo
+- Vazesh
+- Empty Voices
+- Screen and Stage composition
+
+It also offers six suggested campaigns, including the Eishan Europe Tour 2026,
+Northern Rhapsody, solo recital bookings, Vazesh festival bookings, composer
+commissions, and Empty Voices presenter/funding development.
+
+Public website information is labelled as unconfirmed until Hamed reviews it in
+**Setup → Portfolio & assets**. The app never treats a public tour statement
+as a confirmed booking.
 
 ## Features
 
@@ -21,10 +41,17 @@ the help icons for plain-language guidance.
 - AI Tour Builder with contact recommendations, outreach drafts, CRM stages, and follow-up reminders
 - Opportunity Scout with network signals, optional live web research, source links, and saved decisions
 - Reusable Artist Profile for consistent pitches, drafts, links, and tour details
-- Creative Studio for booking, festival, press, release, and collaboration pitch packs
-- Daily Brief that combines follow-ups, active opportunities, relationship gaps, and profile setup
-- Manager Briefing that recommends one focus and flags project or relationship risks
-- Project portfolio for tours, releases, campaigns, and collaborations
+- Pitch Room for booking, festival, press, release, and collaboration pitch packs
+- Today brief that combines deals, follow-ups, active opportunities, relationship gaps, and profile setup
+- Today manager plan that recommends the next booking moves, deal follow-ups, route gaps, and pitch blockers
+- First-class Deals pipeline for leads, pitch-ready opportunities, contacted prospects, follow-ups, interest, negotiation, confirmation, and passed work
+- Booking Money summary for confirmed income, projected income, open deal value, follow-ups due, and route gaps
+- Pitch readiness checks on every deal before outreach is drafted
+- Campaign portfolio for tours, releases, bookings, commissions, and funding
+- Separate act profiles so Eishan, Vazesh, solo, orchestral, and screen/stage work use the correct facts
+- Campaign route windows with Confirmed, Tentative, and Available states
+- Campaign-specific opportunity ranking and creative drafts
+- Website-source provenance and explicit factual confirmation
 - Project task desks with due dates, progress, linked contacts, and linked opportunities
 - Booking and deal ledger with offer, negotiation, confirmation, payment, and lost statuses
 - Project budget and break-even forecast for planned, committed, and paid costs
@@ -41,7 +68,11 @@ The detailed process for cleaning, verifying, enriching, reviewing, and safely
 activating contact records is documented in
 [Contact enrichment process](docs/contact-enrichment-process.md).
 
-Open **Settings** to see **Contact Data Readiness**. It measures
+The living backlog for future manager-focused modules is documented in
+[Module ideation backlog](docs/module-ideation-backlog.md). Refresh it after
+each shipped module so the next sprint stays tied to real workflow gaps.
+
+Open **Setup** to see **Contact Data Readiness**. It measures
 verified email-route coverage, location coverage, clear next actions, and
 follow-up scheduling for active relationships. The queue recommends the
 highest-value missing detail to fix for up to six contacts and opens the
@@ -84,12 +115,43 @@ Create `.env.local`:
 ```bash
 OPENAI_API_KEY=your_api_key
 OPENAI_MODEL=gpt-5.5
+OPENAI_MONTHLY_BUDGET_USD=10
 ```
 
 Without an API key, the app uses its built-in search, enrichment, and email-generation heuristics.
 
 When an OpenAI key is configured, network questions and email-generation requests
 send the relevant contact context to the configured OpenAI API account.
+
+### AI spending protection
+
+The app enforces its own monthly server-side budget rather than relying only on
+provider alerts. The default limit is US$10.
+
+- equivalent requests are cached for seven days
+- requests reserve a conservative estimated cost before calling OpenAI
+- live Find Work research asks for confirmation
+- the app blocks paid requests when the monthly limit is reached
+- local recommendations and deterministic drafts continue to work
+- Setup displays the current remaining budget
+
+Local development usage is stored in `.private/ai-usage.json`, which is ignored
+by Git. A production deployment should move this ledger to the operational
+database or Airtable.
+
+## Campaign workflow
+
+1. Open **Campaigns** and select one campaign.
+2. Review the website-sourced facts and activate the campaign.
+3. Confirm its goal, dates, ensemble size, fee guidance, and required materials.
+4. Open **Find Work**. Every search belongs to the selected campaign.
+5. Save strong opportunities and link them to the campaign.
+6. Open **Pitch Room** to create campaign-specific outreach.
+7. Approve a draft before creating a Gmail draft. Nothing is auto-sent.
+8. Mark real route dates Confirmed before syncing them to Calendar.
+
+The Europe 2026 route starts with open date windows only. These are planning
+windows, not claimed bookings.
 
 ## AI Tour Builder
 
@@ -159,10 +221,45 @@ Airtable import. A later automation can:
 The recommended production workflow should continue creating Gmail drafts rather
 than sending automatically, preserving the approval step used in this prototype.
 
-## Opportunity Scout
+## Airtable, Make, Gmail, and Calendar
 
-Open **Opportunities** and use the **Scout** tab to describe the locations,
-genre, goals, and context that matter.
+Add the optional server-side variables:
+
+```bash
+AIRTABLE_PERSONAL_ACCESS_TOKEN=
+AIRTABLE_BASE_ID=
+MAKE_WEBHOOK_URL=
+GOOGLE_CALENDAR_ID=
+```
+
+Create these Airtable tables with an `External ID` field:
+
+- Workspace, with an additional long-text `Snapshot` field
+- Acts
+- Campaigns
+- Assets
+- Contacts
+- Opportunities
+
+The first sync upserts records by `External ID`, so repeating a sync does not
+create duplicates. A sanitized workspace snapshot restores acts, campaigns,
+assets, and opportunities on another browser. Contact operational fields sync,
+but private raw relationship notes and unapproved drafts are excluded.
+
+The Make webhook receives only explicit approved actions:
+
+- `create_gmail_draft` creates a Gmail draft with `send: false`
+- `upsert_calendar_events` creates or updates confirmed dates using stable
+  idempotency keys
+
+The app does not include a send-email action. Draft approval and actual sending
+remain separate human decisions.
+
+## Campaign Find Work
+
+Open **Find Work**, choose the campaign, and review its automatically prepared
+weekly network shortlist. Each campaign gets at most one free network scan every
+seven days unless the user manually runs another scan.
 
 Scout always starts with the saved contact network. It looks for:
 
@@ -171,16 +268,17 @@ Scout always starts with the saved contact network. It looks for:
 - introductions and connected contacts that reduce cold outreach
 - strong relationships with a clear next action
 
-When `OPENAI_API_KEY` is configured, Scout also searches current web sources for
-up to three relevant opportunities. Live results are clearly labelled and link
-to the source page. A slow or unavailable API never blocks the local network
-results.
+When `OPENAI_API_KEY` is configured, Find Work can search current official sources
+for up to three additional opportunities. The app asks before this paid search.
+Live results are labelled, source-linked, campaign-specific, and combined into
+a shortlist capped at ten. A slow, unavailable, or budget-blocked API never
+blocks local network results.
 
 Opportunity decisions are stored locally:
 
 - **Save** keeps an opportunity for later
 - **Start working on it** marks it active
-- **Add to project** connects it to a tour, release, campaign, or collaboration
+- **Add to campaign** connects it to a tour, release, campaign, or collaboration
 - **Return to inbox** moves saved or active work back to the new-opportunity list
 - **Not for me** removes it from the working inbox
 
@@ -188,34 +286,64 @@ The notification bell surfaces a small action list rather than a general
 activity feed. It includes overdue follow-ups, high-confidence new
 opportunities, and strong relationships without a scheduled next date.
 
-## Daily Brief
+## Today
 
-Today turns the product’s existing signals into a short daily plan. It can
-include due follow-ups, saved and active opportunities, strong relationships
-without a next date, and incomplete artist-profile setup.
+Today turns the product’s booking signals into a short manager plan. It can
+include the most valuable active deal, booking follow-ups due now, route gaps,
+missing pitch materials, and strong relationships without a next date.
 
-The brief is capped at six actions and prioritises important work first. Each
-item has one primary action. **Done for today** hides it until the next day, and
-**Restore hidden** reverses accidental dismissals.
+The plan is capped at five actions and prioritises money-moving work first.
+Each item has one primary action. **Done** hides it for the day, and **Restore
+hidden moves** reverses accidental dismissals.
 
-The **Manager Briefing** above the daily list recommends one focus based on due
-follow-ups, project tasks, active opportunities, and projects without a next
-move. Its signals are factual counts from the local workspace.
+## Deals
 
-## Projects and connected work
+Deals is the main booking pipeline. It tracks practical opportunities such as
+festival pitches, venue dates, booking-agent routes, commissions, funding leads,
+and press opportunities.
 
-Projects provide the shared context for the rest of the app. Create a **Tour**,
-**Release**, **Campaign**, or **Collaboration**, then:
+Deal stages are:
+
+- **Lead**
+- **Pitch Ready**
+- **Contacted**
+- **Follow-Up Due**
+- **Interested**
+- **Negotiating**
+- **Confirmed**
+- **Passed**
+
+Each deal stores the related campaign or act, contact or opportunity, city,
+country, deal type, target fee, projected value, status, next step, follow-up
+date, confidence score, missing materials, notes, and source. Marking a deal as
+**Contacted** creates a follow-up date seven days later if one is not already
+set. Confirmed value is only recorded when the user manually moves a deal to
+**Confirmed**.
+
+The Booking Money panel summarises confirmed income, projected income, open deal
+value, follow-ups due, route gaps, and the strongest booking move today. These
+are working estimates, not accounting records.
+
+Every deal also shows pitch readiness. The app checks campaign facts, the
+selected act, dates or availability, fee guidance, and required materials such
+as biography, EPK, music, live video, press quote, and technical rider. Outreach
+remains draft-only and is never sent automatically.
+
+## Campaigns and connected work
+
+Campaigns provide the shared context for the rest of the app. Use a **Tour**,
+**Release**, **Bookings**, **Commissions**, or **Funding** campaign, then:
 
 1. add practical tasks and optional due dates
 2. mark tasks as To do, Doing, or Done
-3. add an opportunity to the project from Scout
-4. add a contact from the contact profile drawer
-5. review every linked person, opportunity, and task from the project desk
-6. use Calendar for one list of project dates, task deadlines, follow-ups, and
+3. add an opportunity to the campaign from Find Work
+4. automatically carry warm contacts into the campaign when an opportunity is linked
+5. review linked people, opportunities, materials, tasks, route gaps, and money
+6. use Calendar for confirmed dates, task deadlines, follow-ups, and
    opportunity deadlines
-7. use Outcomes to record commercial conversations as leads, offers,
-   negotiations, confirmed bookings, payments, or lost work
+7. use Deals to record commercial conversations as leads, pitch-ready targets,
+   contacted prospects, follow-ups, interest, negotiation, confirmation, or
+   passed work
 8. add travel, accommodation, production, musician, marketing, and other costs
    to see a currency-safe break-even forecast
 
@@ -225,16 +353,16 @@ are always entered manually; the app does not infer that money was received.
 Planned costs are included in the forecast balance so users can see what a
 project still needs to earn. Cost and payment states are also manual.
 
-Project information is stored in the browser with the rest of the local
-workspace. Deleting a project removes only the project record; it does not
+Campaign information is stored in the browser with the rest of the local
+workspace. Removing a campaign removes only the campaign record; it does not
 delete contacts or opportunities.
 
 ## Workspace backup
 
-Open **Settings**, then **Backups & automation**. **Full backup** downloads one
+Open **Setup**, then **Backups & automation**. **Full backup** downloads one
 JSON file containing contacts, projects, tasks, bookings, costs, opportunities,
-artist profile, relationship activity, Tour Builder state, research brief, and
-Creative Studio drafts. Contact-only JSON and CSV exports remain available.
+booking deals, artist profile, relationship activity, Tour Builder state, research brief, and
+Pitch Room drafts. Contact-only JSON and CSV exports remain available.
 
 Use **Restore backup** to select a previously exported workspace file. The app
 validates the file and asks for confirmation before replacing anything in the
@@ -264,18 +392,18 @@ Windows or Linux. Search accepts a person, company, city, project, opportunity,
 or workspace name. Opening a contact from search also opens the complete contact
 profile.
 
-## Artist Profile and Creative Studio
+## Artist Profile and Pitch Room
 
-Open **Studio**, then choose **Artist profile** to create the reusable profile.
+Open **Pitch Room**, then choose **Artist profile** to create the reusable profile.
 Store the facts that
 should stay consistent across the app: artist and project names, base city,
 genres, biography, current project, goals, useful links, fee guidance, and email
 signature.
 
-Tour Builder, email drafting, Opportunity Scout, and Creative Studio reuse this
+Tour Builder, email drafting, Find Work, and Pitch Room reuse this
 profile instead of asking for the same information each time.
 
-Use the **Create** tab in Studio to create an editable pack for:
+Use the **Create** tab in Pitch Room to create an editable pack for:
 
 - booking pitches
 - festival applications

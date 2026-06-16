@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
-  title: "Jazz Network Navigator",
-  description: "AI-powered relationship radar for booking, festivals, labels, venues and press.",
+  title: "Hamed Artist Manager",
+  description: "Campaign-based artist management for tours, releases, relationships, opportunities and outreach.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

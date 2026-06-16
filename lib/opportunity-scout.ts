@@ -92,6 +92,7 @@ function makeContactOpportunity(contact: Contact, brief: ResearchBrief): Researc
 
   return {
     id: stableId(contact.id, type, organisation),
+    campaignId: brief.campaignId,
     title: `${type === "Booking" ? "Booking route" : type} with ${organisation}`,
     organisation,
     location,
@@ -125,6 +126,7 @@ function makeCityOpportunity(cityKey: string, contacts: Contact[], brief: Resear
 
   return {
     id: stableId("city-cluster", cityKey, type),
+    campaignId: brief.campaignId,
     title: `Build a focused ${city} route`,
     organisation: `${ranked.length} network contacts`,
     location: [city, country].filter(Boolean).join(", "),
@@ -169,7 +171,7 @@ export function buildLocalOpportunityScan(
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, 4);
 
-  return [...clusters, ...candidates].sort((a, b) => b.confidence - a.confidence).slice(0, 18);
+  return [...clusters, ...candidates].sort((a, b) => b.confidence - a.confidence).slice(0, 10);
 }
 
 export function mergeOpportunities(

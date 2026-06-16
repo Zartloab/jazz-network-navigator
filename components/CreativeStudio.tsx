@@ -20,11 +20,16 @@ import {
   profileCompleteness,
 } from "@/lib/creative-studio";
 import {
+  ActProfile,
+  ArtistAsset,
   ArtistProfile,
+  ArtistWorkspace,
+  Campaign,
   CreativeBrief,
   CreativeGoal,
   CreativePack,
 } from "@/lib/types";
+import { actToArtistProfile } from "@/lib/hamed-portfolio";
 
 const PACK_STORAGE_KEY = "jazz-network-navigator-creative-packs-v1";
 
@@ -34,6 +39,8 @@ const goals: CreativeGoal[] = [
   "Press story",
   "Release campaign",
   "Collaboration idea",
+  "Composer commission",
+  "Funding introduction",
 ];
 
 const defaultBrief: CreativeBrief = {
@@ -77,18 +84,35 @@ function TextAsset({
 
 export default function CreativeStudio({
   profile,
+  workspace,
+  acts,
+  assets,
+  campaigns,
   onOpenProfile,
 }: {
   profile: ArtistProfile;
+  workspace: ArtistWorkspace;
+  acts: ActProfile[];
+  assets: ArtistAsset[];
+  campaigns: Campaign[];
   onOpenProfile: () => void;
 }) {
+  const initialCampaignId =
+    campaigns.find((campaign) => campaign.status === "Active")?.id ||
+    campaigns[0]?.id ||
+    "";
+  const [campaignId, setCampaignId] = useState(initialCampaignId);
   const [brief, setBrief] = useState<CreativeBrief>(defaultBrief);
   const [packs, setPacks] = useState<CreativePack[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [hydrated, setHydrated] = useState(false);
-  const completeness = profileCompleteness(profile);
+  const campaign = campaigns.find((item) => item.id === campaignId) || campaigns[0];
+  const act = campaign ? acts.find((item) => item.id === campaign.actId) : undefined;
+  const activeProfile =
+    campaign && act ? actToArtistProfile(workspace, act, campaign, assets) : profile;
+  const completeness = profileCompleteness(activeProfile);
   const selectedPack = packs.find((pack) => pack.id === selectedId) || packs[0] || null;
 
   useEffect(() => {
@@ -124,7 +148,21 @@ export default function CreativeStudio({
   }, [selectedPack]);
 
   const generate = async () => {
-    const localPack = generateLocalCreativePack(profile, brief);
+    if (!campaign || !act) {
+      setMessage("Choose a campaign before creating a draft kit.");
+      return;
+    }
+    if (!campaign.confirmed || !act.confirmed) {
+      setMessage("Review and confirm the act and campaign facts in Setup before generating outreach.");
+      return;
+    }
+    const campaignBrief = {
+      ...brief,
+      campaignId: campaign.id,
+      actId: act.id,
+      context: [brief.context, campaign.goal, campaign.notes].filter(Boolean).join(" "),
+    };
+    const localPack = generateLocalCreativePack(activeProfile, campaignBrief);
     setPacks((current) => [localPack, ...current].slice(0, 6));
     setSelectedId(localPack.id);
     setLoading(true);
@@ -137,20 +175,33 @@ export default function CreativeStudio({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ profile, brief }),
+        body: JSON.stringify({
+          profile: activeProfile,
+          brief: campaignBrief,
+          act,
+          campaign,
+          assets: assets.filter((asset) => asset.actId === act.id && asset.verified),
+        }),
       });
       window.clearTimeout(timeout);
       const payload = (await response.json()) as {
         available?: boolean;
         pack?: CreativePack;
         error?: string;
+        budgetBlocked?: boolean;
       };
       if (response.ok && payload.pack) {
         setPacks((current) => [payload.pack!, ...current.filter((pack) => pack.id !== localPack.id)].slice(0, 6));
         setSelectedId(payload.pack.id);
         setMessage("AI draft ready. Everything remains editable and nothing has been sent.");
       } else {
-        setMessage(payload.error ? `${payload.error} The local draft is ready.` : "Local draft ready. Add an OpenAI key for an AI refinement.");
+        setMessage(
+          payload.budgetBlocked
+            ? "The monthly AI limit has been reached. Your local draft is ready and no paid request was made."
+            : payload.error
+              ? `${payload.error} The local draft is ready.`
+              : "Local draft ready. Add an OpenAI key for an AI refinement.",
+        );
       }
     } catch {
       setMessage("AI refinement is unavailable right now. The local draft is ready.");
@@ -169,11 +220,45 @@ export default function CreativeStudio({
     setMessage("");
   };
 
+  const updateSelectedPack = (patch: Partial<CreativePack>) => {
+    if (!selectedPack) return;
+    setPacks((current) =>
+      current.map((pack) => pack.id === selectedPack.id ? { ...pack, ...patch } : pack),
+    );
+  };
+
+  const createGmailDraft = async () => {
+    if (!selectedPack || selectedPack.approvalStatus !== "Approved") return;
+    setLoading(true);
+    setMessage("Creating a Gmail draft through the approved automation...");
+    try {
+      const response = await fetch("/api/automation/gmail-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          approved: true,
+          campaignId: selectedPack.campaignId,
+          actId: selectedPack.actId,
+          subject: selectedPack.subjectLine,
+          body: selectedPack.longPitch,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "The Gmail draft could not be created.");
+      updateSelectedPack({ gmailDraftId: payload.gmailDraftId });
+      setMessage("Gmail draft created. It has not been sent.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The Gmail draft could not be created.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <section className="creative-studio-workspace">
       <div className="studio-intro">
         <div>
-          <span className="eyebrow">AI Creative Studio</span>
+          <span className="eyebrow">Pitch Room</span>
           <h2>Turn your project into material people can use.</h2>
           <p>Create a focused pitch kit without starting from a blank page. Every result is a draft.</p>
         </div>
@@ -190,6 +275,22 @@ export default function CreativeStudio({
             <span><WandSparkles size={19} /></span>
             <div><strong>What are you making?</strong><small>Choose one useful output.</small></div>
           </div>
+          <label>
+            <span>Campaign</span>
+            <select value={campaign?.id || ""} onChange={(event) => setCampaignId(event.target.value)}>
+              {campaigns.filter((item) => item.status !== "Complete").map((item) => {
+                const itemAct = acts.find((candidate) => candidate.id === item.actId);
+                return <option value={item.id} key={item.id}>{item.name} · {itemAct?.shortName}</option>;
+              })}
+            </select>
+          </label>
+          {campaign && act && (
+            <div className={`studio-campaign-context${campaign.confirmed && act.confirmed ? " confirmed" : ""}`}>
+              <span>{campaign.confirmed && act.confirmed ? <Check size={13} /> : <FileText size={13} />}{act.name}</span>
+              <p>{campaign.goal}</p>
+              {(!campaign.confirmed || !act.confirmed) && <small>Confirm the website-sourced facts in Setup before generating.</small>}
+            </div>
+          )}
           <label>
             <span>Type of kit</span>
             <select value={brief.goal} onChange={(event) => setBrief({ ...brief, goal: event.target.value as CreativeGoal })}>
@@ -241,6 +342,16 @@ export default function CreativeStudio({
                   <p>{selectedPack.goal} · created {new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(selectedPack.createdAt))}</p>
                 </div>
                 <div className="studio-output-actions">
+                  {selectedPack.approvalStatus !== "Approved" ? (
+                    <button className="studio-approve" onClick={() => {
+                      updateSelectedPack({ approvalStatus: "Approved" });
+                      setMessage("Draft approved. Nothing has been sent.");
+                    }}><Check size={13} /> Approve draft</button>
+                  ) : selectedPack.gmailDraftId ? (
+                    <span className="studio-approved"><Check size={13} /> Gmail draft created, not sent</span>
+                  ) : (
+                    <button className="studio-approve" onClick={createGmailDraft} disabled={loading}><FileText size={13} /> Create Gmail draft</button>
+                  )}
                   <CopyButton value={completePackText} label="Copy complete kit" />
                   <button className="studio-delete" onClick={removeSelectedPack}><Trash2 size={13} /> Delete draft</button>
                 </div>

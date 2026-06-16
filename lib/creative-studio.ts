@@ -82,6 +82,18 @@ function goalCopy(brief: CreativeBrief, profile: ArtistProfile) {
       short: `${basePitch(profile)} The collaboration would connect ${project} with ${audience} around a specific creative exchange rather than a vague networking ask.`,
       action: "Would you be open to a short conversation to test the creative fit?",
     },
+    "Composer commission": {
+      title: `${name} commission introduction`,
+      subject: `${name}: composition and commission conversation`,
+      short: `${basePitch(profile)} The current focus is ${project}, with a clear fit for ${audience} and work across performance, theatre, film, or dance.`,
+      action: "Would a short portfolio and conversation about your upcoming program be useful?",
+    },
+    "Funding introduction": {
+      title: `${name} funding introduction`,
+      subject: `${name}: project and funding conversation`,
+      short: `${basePitch(profile)} ${project} is being developed as a specific artistic project with a defined audience, delivery path, and partnership opportunity.`,
+      action: "May I send a concise project outline, current partners, and the support being sought?",
+    },
   } satisfies Record<CreativeBrief["goal"], {
     title: string;
     subject: string;
@@ -106,6 +118,9 @@ export function generateLocalCreativePack(
     createdAt: new Date().toISOString(),
     source: "local",
     goal: brief.goal,
+    campaignId: brief.campaignId,
+    actId: brief.actId,
+    approvalStatus: "Draft",
     title: copy.title,
     oneLiner: basePitch(profile),
     subjectLine: copy.subject,
